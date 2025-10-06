@@ -1,22 +1,174 @@
-NODE_ENV=production
+# backend/.env.example
+NODE_ENV=development
 PORT=3001
 
 # Database
-DATABASE_URL=postgresql://user:password@host:5432/dbname
+DATABASE_URL=postgresql://username:password@localhost:5432/solar_assessment
+
+# Redis Cache
+REDIS_URL=redis://localhost:6379
 
 # External APIs
 BRREG_API_URL=https://data.brreg.no/enhetsregisteret/api
 KARTVERKET_ADDRESS_API=https://ws.geonorge.no/adresser/v1
 KARTVERKET_WMS_URL=https://wms.geonorge.no/skwms1/wms.nib
+KARTVERKET_ELEVATION_API=https://ws.geonorge.no/hoydedata/v1
 
-# API Keys (hvis nødvendig)
-GEONORGE_API_KEY=your_key_here
-MET_API_KEY=your_met_key
+# API Keys (if required)
+GEONORGE_API_KEY=
+MET_API_KEY=
+MAPBOX_TOKEN=
 
 # Security
-JWT_SECRET=your_jwt_secret_here
-CORS_ORIGIN=https://dittdomene.no
+JWT_SECRET=your-super-secret-jwt-key-change-this
+SESSION_SECRET=your-session-secret-change-this
+ENCRYPTION_KEY=your-encryption-key-change-this
+
+# CORS
+CORS_ORIGIN=http://localhost:3000
 
 # Rate Limiting
-RATE_LIMIT_WINDOW=15
-RATE_LIMIT_MAX=100
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+# Monitoring
+SENTRY_DSN=your_sentry_dsn_here
+LOG_LEVEL=info
+
+# Email (for notifications)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+
+# .gitignore
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Production
+build/
+dist/
+*.production.js
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Database
+*.sqlite
+*.db
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+coverage/
+.nyc_output
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Certificates
+*.pem
+*.key
+*.crt
+
+# Backups
+*.backup
+*.bak
+
+# nginx.conf (for frontend container)
+server {
+    listen 80;
+    server_name localhost;
+    
+    location / {
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        try_files $uri $uri/ /index.html;
+    }
+    
+    location /api {
+        proxy_pass http://backend:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+    
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/share/nginx/html;
+    }
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' https://*.kartverket.no https://wms.geonorge.no data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" always;
+}
+
+# Makefile for easy commands
+.PHONY: help install dev build test deploy clean
+
+help:
+	@echo "Available commands:"
+	@echo "  make install    - Install all dependencies"
+	@echo "  make dev        - Start development servers"
+	@echo "  make build      - Build for production"
+	@echo "  make test       - Run tests"
+	@echo "  make deploy     - Deploy to production"
+	@echo "  make clean      - Clean build artifacts"
+
+install:
+	cd frontend && npm install
+	cd backend && npm install
+
+dev:
+	docker-compose up -d
+
+build:
+	cd frontend && npm run build
+	cd backend && npm run build
+
+test:
+	cd frontend && npm test
+	cd backend && npm test
+
+deploy:
+	git push origin main
+
+clean:
+	rm -rf frontend/build
+	rm -rf backend/dist
+	rm -rf node_modules
+	docker-compose down -v
