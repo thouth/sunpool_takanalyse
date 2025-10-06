@@ -1,1 +1,21 @@
-
+{
+  "name": "solar-assessment-backend",
+  "version": "1.0.0",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "axios": "^1.4.0",
+    "helmet": "^7.0.0",
+    "express-rate-limit": "^6.7.0",
+    "pg": "^8.11.0",
+    "@tensorflow/tfjs-node": "^4.10.0",
+    "sharp": "^0.32.0"
+  }
+}
