@@ -1,1 +1,22 @@
+NODE_ENV=production
+PORT=3001
 
+# Database
+DATABASE_URL=postgresql://user:password@host:5432/dbname
+
+# External APIs
+BRREG_API_URL=https://data.brreg.no/enhetsregisteret/api
+KARTVERKET_ADDRESS_API=https://ws.geonorge.no/adresser/v1
+KARTVERKET_WMS_URL=https://wms.geonorge.no/skwms1/wms.nib
+
+# API Keys (hvis nødvendig)
+GEONORGE_API_KEY=your_key_here
+MET_API_KEY=your_met_key
+
+# Security
+JWT_SECRET=your_jwt_secret_here
+CORS_ORIGIN=https://dittdomene.no
+
+# Rate Limiting
+RATE_LIMIT_WINDOW=15
+RATE_LIMIT_MAX=100
