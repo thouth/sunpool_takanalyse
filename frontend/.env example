@@ -1,2 +1,5 @@
-REACT_APP_API_URL=https://api.dittdomene.no
-REACT_APP_MAPBOX_TOKEN=your_mapbox_token
+#frontend/.env.example
+REACT_APP_API_URL=http://localhost:3001
+REACT_APP_ENVIRONMENT=development
+REACT_APP_SENTRY_DSN=your_sentry_dsn_here
+REACT_APP_GA_TRACKING_ID=your_google_analytics_id
