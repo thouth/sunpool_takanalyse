@@ -8,6 +8,7 @@ const buildHeaders = (headers = {}) => {
     ...headers,
   };
 
+  // Legg til API-nøkkel hvis satt og ikke allerede spesifisert
   if (API_KEY && !combined['x-api-key']) {
     combined['x-api-key'] = API_KEY;
   }
@@ -60,14 +61,14 @@ export const assessmentService = {
     const steps = [
       'Verifiserer selskap...',
       'Henter kartdata...',
-      'Analyserer tak og omgivelser...'
+      'Analyserer tak og omgivelser...',
     ];
 
     const response = await withProgress(onProgress, steps, () =>
       apiRequest('/assessment/full', {
         method: 'POST',
         body: payload,
-      })
+      }),
     );
 
     return response?.data;
