@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: solar-assessment-backend
+    env: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: https://solar-assessment-frontend.onrender.com
+      - key: MOCK_EXTERNAL_APIS
+        value: "false"
+  - type: static
+    name: solar-assessment-frontend
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    publishDir: build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://solar-assessment-backend.onrender.com/api
+      - key: REACT_APP_ENVIRONMENT
+        value: production
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache

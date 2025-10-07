@@ -95,6 +95,7 @@ En profesjonell webapplikasjon for vurdering av solcellepotensial på næringsby
 
 - Se [Render-oppsett](docs/render-deployment.md) for en stegvis veiledning til både frontend og backend.
 - Render bygger og deployer automatisk fra GitHub-repositoriet ditt, så den tidligere GitHub Actions-workflowen for Vercel/Railway er ikke nødvendig.
+- Opprett tjenestene med `render.yaml`-blueprinten i rotmappen for å få riktige build-kommandoer (frontend: `npm install && npm run build`, backend: `npm install`).
 - Frontend kan også deployes på Vercel/Netlify, backend kan hostes på Railway/Heroku/Docker dersom du ønsker alternativer til Render.
 
 ## 🧪 Testing
