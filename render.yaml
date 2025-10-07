@@ -14,7 +14,7 @@ services:
         value: https://solar-assessment-frontend.onrender.com
       - key: MOCK_EXTERNAL_APIS
         value: "false"
-  - type: static
+  - type: static_site
     name: solar-assessment-frontend
     rootDir: frontend
     buildCommand: npm install && npm run build
