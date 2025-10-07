@@ -1,5 +1,4 @@
 // backend/src/services/imageAnalysisService.js
-const axios = require('axios');
 // In production, you would import: const tf = require('@tensorflow/tfjs-node');
 
 class ImageAnalysisService {

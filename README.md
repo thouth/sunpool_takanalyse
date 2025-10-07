@@ -4,9 +4,9 @@ En profesjonell webapplikasjon for vurdering av solcellepotensial på næringsby
 
 ## 📋 Funksjoner
 
-- ✅ Verifisering av organisasjonsnummer via Brønnøysundregisteret
-- 📍 Geokoding av adresser via Kartverket
-- 🛰️ Satellittbilder fra Norge i bilder (WMS)
+- ✅ Verifisering av organisasjonsnummer via Brønnøysundregisteret (med lokal fallback)
+- 📍 Geokoding av adresser via Kartverket (med lokal fallback)
+- 🛰️ Satellittbilder fra Norge i bilder (eller forhåndsdefinert mock-bilde)
 - 📊 Analyse av takflater og solpotensial
 - 🌤️ Lokale værforhold og solinnstråling
 - 📈 Produksjonsestimater og økonomiske beregninger
@@ -23,56 +23,61 @@ En profesjonell webapplikasjon for vurdering av solcellepotensial på næringsby
 ### Installasjon
 
 1. **Klon repositoriet**
-```bash
-git clone https://github.com/ditt-brukernavn/solar-assessment-app.git
-cd solar-assessment-app
-```
+   ```bash
+   git clone https://github.com/ditt-brukernavn/solar-assessment-app.git
+   cd solar-assessment-app
+   ```
 
 2. **Installer dependencies**
-```bash
-# Frontend
-cd frontend
-npm install
+   ```bash
+   # Frontend
+   cd frontend
+   npm install
 
-# Backend
-cd ../backend
-npm install
-```
+   # Backend
+   cd ../backend
+   npm install
+   ```
 
 3. **Konfigurer miljøvariabler**
-```bash
-cp .env.example .env
-# Rediger .env med dine innstillinger
-```
+   ```bash
+   # Backend
+   cp backend/.env.example backend/.env
+
+   # Frontend
+   cp frontend/.env.example frontend/.env
+   ```
+
+   `MOCK_EXTERNAL_APIS=true` i backend-konfigurasjonen gjør at appen fungerer uten nettilgang til Brønnøysundregisteret og Kartverket. Sett verdien til `false` i produksjon for å bruke ekte data. Dersom du aktiverer `API_ACCESS_KEY` på backend, fyll inn den samme verdien i `REACT_APP_API_KEY` i frontend.
 
 4. **Start applikasjonen**
 
-Med Docker:
-```bash
-docker-compose up
-```
+   **Med Docker**
+   ```bash
+   docker-compose up
+   ```
 
-Uten Docker:
-```bash
-# Terminal 1 - Backend
-cd backend
-npm run dev
+   **Uten Docker**
+   ```bash
+   # Terminal 1 - Backend
+   cd backend
+   npm run dev
 
-# Terminal 2 - Frontend
-cd frontend
-npm start
-```
+   # Terminal 2 - Frontend
+   cd frontend
+   npm start
+   ```
 
-Applikasjonen er nå tilgjengelig på:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:3001
+   Applikasjonen er nå tilgjengelig på:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:3001/api
 
-## 🏗️ Teknisk Stack
+## 🏗️ Teknisk stack
 
 ### Frontend
 - React 18
 - Tailwind CSS
-- Axios
+- Fetch API
 - Lucide Icons
 
 ### Backend
@@ -88,18 +93,8 @@ Applikasjonen er nå tilgjengelig på:
 
 ## 📦 Deployment
 
-### Vercel (Frontend)
-```bash
-npm install -g vercel
-vercel
-```
-
-### Railway/Heroku (Backend)
-```bash
-railway login
-railway init
-railway up
-```
+- Se [Render-oppsett](docs/render-deployment.md) for en stegvis veiledning til både frontend og backend.
+- Frontend kan også deployes på Vercel/Netlify, backend kan hostes på Railway/Heroku/Docker.
 
 ## 🧪 Testing
 
@@ -111,46 +106,52 @@ npm test
 # Backend tester
 cd backend
 npm test
-
-# Coverage rapport
-npm run test:coverage
 ```
 
 ## 📝 API Dokumentasjon
 
-### Endpoints
+Alle endepunkter prefikses med `/api`.
 
-#### `POST /api/verify-company`
-Verifiserer organisasjonsnummer mot Brønnøysundregisteret.
+### `POST /api/company/verify`
+Verifiserer organisasjonsnummer mot Brønnøysundregisteret. Returnerer mock-data dersom ekstern tjeneste ikke er tilgjengelig og `MOCK_EXTERNAL_APIS=true`.
 
-#### `POST /api/geocode`
-Konverterer adresse til koordinater.
+### `POST /api/address/geocode`
+Konverterer adresse til koordinater og kommuneinformasjon. Har samme fallback-mekanisme som over.
 
-#### `POST /api/analyze-roof`
-Analyserer takflate basert på satellittbilder.
+### `POST /api/analysis/roof`
+Analyserer takflate basert på genererte/virkelige satellittbilder.
 
-#### `POST /api/assess`
-Utfører komplett solcellevurdering.
+### `POST /api/analysis/location`
+Returnerer lokasjonsanalyse inkludert værforhold dersom `includeWeather=true`.
+
+### `POST /api/assessment/full`
+Utfører komplett solcellevurdering (selskap, adresse, tak, vær). Settes `save=true` blir resultatet lagret i minnet.
+
+### `GET /api/assessment/:id`
+Henter tidligere lagret vurdering.
+
+### `GET /api/assessment`
+Lister lagrede vurderinger med paginering.
 
 ## 🔒 Sikkerhet
 
 - HTTPS påkrevd i produksjon
-- Rate limiting på alle API-endpoints
-- Input validering og sanitering
-- Helmet.js for sikre HTTP headers
-- CORS konfigurert for kjente domener
+- API-nøkkel via `API_ACCESS_KEY` (valgfritt) på alle `/api`-ruter
+- Rate limiting og Helmet for HTTP headere
+- Input-validering via tilpasset middleware
+- CORS konfigurert via `CORS_ORIGIN`
 
 ## 🤝 Bidra
 
-Vi tar gjerne imot bidrag! Se [CONTRIBUTING.md](CONTRIBUTING.md) for retningslinjer.
+Vi tar gjerne imot bidrag! Opprett en issue eller pull request.
 
 ## 📄 Lisens
 
-Dette prosjektet er lisensiert under MIT-lisensen. Se [LICENSE](LICENSE) filen for detaljer.
+Dette prosjektet er lisensiert under MIT-lisensen.
 
 ## 📞 Kontakt
 
-- Prosjekt Link: [https://github.com/ditt-brukernavn/solar-assessment-app](https://github.com/ditt-brukernavn/solar-assessment-app)
+- Prosjektlink: [https://github.com/ditt-brukernavn/solar-assessment-app](https://github.com/ditt-brukernavn/solar-assessment-app)
 - Issues: [GitHub Issues](https://github.com/ditt-brukernavn/solar-assessment-app/issues)
 
 ## 🙏 Anerkjennelser
