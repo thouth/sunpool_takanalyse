@@ -5,7 +5,7 @@ class AssessmentService {
     this.assessments = new Map();
   }
 
-  calculateScore(roofAnalysis, locationAnalysis) {
+  calculateScore(roofAnalysis, locationAnalysis, weatherSummary = {}) {
     let score = 5; // Base score
     
     // Roof factors (40% weight)
@@ -28,22 +28,56 @@ class AssessmentService {
     // Roof condition factor (10% weight)
     if (['Utmerket', 'God'].includes(roofAnalysis.roofCondition)) score += 0.5;
     
+    // Weather factors (20% weight shared across metrics)
+    if (weatherSummary.clearnessIndex) {
+      if (weatherSummary.clearnessIndex > 0.65) score += 0.6;
+      else if (weatherSummary.clearnessIndex < 0.45) score -= 0.6;
+    }
+
+    if (weatherSummary.wind?.max) {
+      if (weatherSummary.wind.max > 20) score -= 0.6;
+      else if (weatherSummary.wind.max < 12) score += 0.2;
+    }
+
+    if (weatherSummary.precipitation?.probability) {
+      if (weatherSummary.precipitation.probability > 60) score -= 0.3;
+      else if (weatherSummary.precipitation.probability < 30) score += 0.2;
+    }
+
     // Ensure score is between 1 and 10
     return Math.min(Math.max(Math.round(score), 1), 10);
   }
 
-  generateRecommendations(score, roofAnalysis, locationAnalysis) {
+  generateRecommendations(score, roofAnalysis, locationAnalysis, weatherSummary = {}) {
     const recommendations = {
       score,
       suitability: this.getSuitabilityDescription(score),
-      estimatedProduction: Math.round(roofAnalysis.estimatedCapacity * locationAnalysis.averageProduction),
-      co2Savings: Math.round(roofAnalysis.estimatedCapacity * locationAnalysis.averageProduction * 0.4 / 1000),
-      estimatedSavings: Math.round(roofAnalysis.estimatedCapacity * locationAnalysis.averageProduction * 1.2),
-      paybackPeriod: this.calculatePaybackPeriod(roofAnalysis.estimatedCapacity, locationAnalysis.averageProduction),
+      productionModifier: this.getWeatherProductionModifier(weatherSummary),
+      estimatedProduction: this.calculateAnnualProduction(
+        roofAnalysis.estimatedCapacity,
+        locationAnalysis.averageProduction,
+        weatherSummary,
+      ),
+      co2Savings: this.calculateCo2Savings(
+        roofAnalysis.estimatedCapacity,
+        locationAnalysis.averageProduction,
+        weatherSummary,
+      ),
+      estimatedSavings: this.calculateAnnualSavings(
+        roofAnalysis.estimatedCapacity,
+        locationAnalysis.averageProduction,
+        weatherSummary,
+      ),
+      paybackPeriod: this.calculatePaybackPeriod(
+        roofAnalysis.estimatedCapacity,
+        locationAnalysis.averageProduction,
+        weatherSummary,
+      ),
       technicalRecommendations: [],
-      nextSteps: []
+      nextSteps: [],
+      weatherInsights: this.getWeatherInsights(weatherSummary),
     };
-    
+
     // Technical recommendations based on score and analysis
     if (score >= 7) {
       recommendations.technicalRecommendations = [
@@ -89,6 +123,18 @@ class AssessmentService {
       ];
     }
     
+    if (weatherSummary.wind?.max > 18) {
+      recommendations.technicalRecommendations.push(
+        'Dimensjoner montasjesystemet for høy vindlast og vurder ekstra forankring.',
+      );
+    }
+
+    if (weatherSummary.precipitation?.probability > 65) {
+      recommendations.nextSteps.push(
+        'Planlegg for regelmessig inspeksjon av avløp og drenering grunnet høy nedbør.',
+      );
+    }
+
     return recommendations;
   }
 
@@ -99,14 +145,75 @@ class AssessmentService {
     return 'Mindre egnet for solceller';
   }
 
-  calculatePaybackPeriod(capacity, averageProduction) {
+  calculatePaybackPeriod(capacity, averageProduction, weatherSummary = {}) {
+    const modifier = this.getWeatherProductionModifier(weatherSummary);
     const investmentCost = capacity * 12000; // NOK per kWp
     const enovaSupport = investmentCost * 0.35; // 35% support
     const netCost = investmentCost - enovaSupport;
-    const yearlyProduction = capacity * averageProduction;
+    const yearlyProduction = this.calculateAnnualProduction(capacity, averageProduction, weatherSummary);
     const yearlySavings = yearlyProduction * 1.2; // NOK per kWh
-    
+
     return Math.round(netCost / yearlySavings);
+  }
+
+  calculateAnnualProduction(capacity, averageProduction, weatherSummary = {}) {
+    const modifier = this.getWeatherProductionModifier(weatherSummary);
+    return Math.round(capacity * averageProduction * modifier);
+  }
+
+  calculateCo2Savings(capacity, averageProduction, weatherSummary = {}) {
+    const annualProduction = this.calculateAnnualProduction(capacity, averageProduction, weatherSummary);
+    return Math.round(annualProduction * 0.4 / 1000);
+  }
+
+  calculateAnnualSavings(capacity, averageProduction, weatherSummary = {}) {
+    const annualProduction = this.calculateAnnualProduction(capacity, averageProduction, weatherSummary);
+    return Math.round(annualProduction * 1.2);
+  }
+
+  getWeatherProductionModifier(weatherSummary = {}) {
+    if (!weatherSummary || typeof weatherSummary.productionModifier !== 'number') {
+      if (weatherSummary?.clearnessIndex) {
+        return this.clamp(0.85 + (weatherSummary.clearnessIndex - 0.5) * 1.1, 0.75, 1.15);
+      }
+      return 1;
+    }
+
+    return this.clamp(weatherSummary.productionModifier, 0.75, 1.15);
+  }
+
+  getWeatherInsights(weatherSummary = {}) {
+    if (!weatherSummary || Object.keys(weatherSummary).length === 0) {
+      return [];
+    }
+
+    const insights = [];
+
+    if (weatherSummary.clearnessIndex >= 0.65) {
+      insights.push('Lokasjonen har høy andel solrike timer og god solklarhet gjennom året.');
+    } else if (weatherSummary.clearnessIndex < 0.45) {
+      insights.push('Forvent noe redusert produksjon på grunn av hyppig skydekke.');
+    }
+
+    if (weatherSummary.wind?.max > 20) {
+      insights.push('Vindkast kan overstige 20 m/s. Vurder ekstra forankring og vindlastberegninger.');
+    } else if (weatherSummary.wind?.average < 6) {
+      insights.push('Moderat vindbelastning gjør standard montasjesystemer egnet.');
+    }
+
+    if (weatherSummary.precipitation?.probability > 60) {
+      insights.push('Høy sannsynlighet for nedbør – optimal panelvinkel sikrer selvrens.');
+    }
+
+    if (weatherSummary.daylightHours > 14) {
+      insights.push('Lang dagslengde i sesong gir utvidet produksjonsvindu.');
+    }
+
+    return insights;
+  }
+
+  clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
   }
 
   async saveAssessment(assessmentData) {

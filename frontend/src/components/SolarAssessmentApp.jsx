@@ -1,7 +1,19 @@
 // frontend/src/components/SolarAssessmentApp.jsx
 import React, { useState } from 'react';
-import { Sun, Building, MapPin, Wind, AlertCircle, CheckCircle, Search, Loader2, Zap, Cloud, Home, Camera, Map, Info } from 'lucide-react';
+import { Sun, Building, MapPin, Wind, AlertCircle, CheckCircle, Search, Loader2, Zap, Cloud, Home, Camera, Map, Info, ThermometerSun, Droplets, Clock } from 'lucide-react';
 import { assessmentService } from '../services/api';
+import {
+  calculateAnnualProduction,
+  calculateCo2Savings,
+  calculateAnnualSavings,
+  calculatePaybackPeriod,
+  formatNumber,
+  formatCurrency,
+  formatPercentage,
+  formatEnergy,
+  formatTonsPerYear,
+  formatYears,
+} from '../utils/calculations';
 
 const SolarAssessmentApp = () => {
   const [companyData, setCompanyData] = useState({
@@ -77,6 +89,22 @@ const SolarAssessmentApp = () => {
     if (score >= 4) return 'Moderat egnet for solceller';
     return 'Mindre egnet for solceller';
   };
+
+  const weather = assessmentResult?.weather;
+  const roofAnalysis = assessmentResult?.roofAnalysis?.analysis;
+  const locationAnalysis = assessmentResult?.locationAnalysis;
+
+  const capacity = roofAnalysis?.estimatedCapacity || 0;
+  const specificYield = locationAnalysis?.averageProduction || 0;
+
+  const annualProduction = calculateAnnualProduction(capacity, specificYield, weather);
+  const co2Savings = calculateCo2Savings(annualProduction);
+  const annualSavings = calculateAnnualSavings(annualProduction);
+  const paybackPeriod = calculatePaybackPeriod(capacity, specificYield, weather) || null;
+
+  const formattedWeatherUpdatedAt = weather?.updatedAt
+    ? new Date(weather.updatedAt).toLocaleString('no-NO')
+    : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-yellow-50 p-4">
@@ -286,11 +314,11 @@ const SolarAssessmentApp = () => {
                   </div>
                   <div className="flex justify-between py-2">
                     <span className="text-gray-600">Estimert kapasitet:</span>
-                    <span className="font-medium text-green-600">{assessmentResult.roofAnalysis.analysis.estimatedCapacity} kWp</span>
+                    <span className="font-medium text-green-600">{formatNumber(roofAnalysis?.estimatedCapacity ?? 0, { maximumFractionDigits: 1 })} kWp</span>
                   </div>
                 </div>
               </div>
-              
+
               {/* Location Analysis */}
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
@@ -324,44 +352,96 @@ const SolarAssessmentApp = () => {
                   </div>
                   <div className="flex justify-between py-2">
                     <span className="text-gray-600">Forventet produksjon:</span>
-                    <span className="font-medium text-blue-600">{assessmentResult.locationAnalysis.averageProduction} kWh/kWp/år</span>
+                    <span className="font-medium text-blue-600">{formatNumber(locationAnalysis?.averageProduction ?? 0)} kWh/kWp/år</span>
                   </div>
                 </div>
               </div>
             </div>
-            
+
+            {weather && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+                  <Cloud className="w-5 h-5 mr-2 text-indigo-500" />
+                  Lokalt værgrunnlag
+                </h3>
+                <div className="grid md:grid-cols-3 gap-4 text-sm text-gray-700">
+                  <div className="bg-indigo-50 rounded-lg p-4">
+                    <div className="flex items-center text-indigo-700 font-semibold mb-2">
+                      <ThermometerSun className="w-4 h-4 mr-2" />Temperatur
+                    </div>
+                    <p>Middel: {formatNumber(weather.temperature?.average, { maximumFractionDigits: 1 })}°C</p>
+                    <p>Min: {formatNumber(weather.temperature?.min, { maximumFractionDigits: 1 })}°C</p>
+                    <p>Maks: {formatNumber(weather.temperature?.max, { maximumFractionDigits: 1 })}°C</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <div className="flex items-center text-blue-700 font-semibold mb-2">
+                      <Wind className="w-4 h-4 mr-2" />Vind og lys
+                    </div>
+                    <p>Vind snitt: {formatNumber(weather.wind?.average, { maximumFractionDigits: 1 })} m/s</p>
+                    <p>Vind maks: {formatNumber(weather.wind?.max, { maximumFractionDigits: 1 })} m/s</p>
+                    <p>Dagslys: {formatNumber(weather.daylightHours, { maximumFractionDigits: 1 })} t/dag</p>
+                  </div>
+                  <div className="bg-cyan-50 rounded-lg p-4">
+                    <div className="flex items-center text-cyan-700 font-semibold mb-2">
+                      <Droplets className="w-4 h-4 mr-2" />Nedbør
+                    </div>
+                    <p>Sannsynlighet: {formatPercentage(weather.precipitation?.probability ?? null)}</p>
+                    <p>Forventet mengde: {formatNumber(weather.precipitation?.expected, { maximumFractionDigits: 1 })} mm/uke</p>
+                    <p>Skydekke: {formatPercentage(weather.cloudCover ?? null)}</p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-3">
+                  Datakilde: {weather.source} • Oppdatert {formattedWeatherUpdatedAt}
+                </p>
+              </div>
+            )}
+
             {/* Recommendations */}
             <div className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl shadow-lg p-6">
               <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
                 <Zap className="w-5 h-5 mr-2 text-yellow-600" />
                 Anbefalinger og estimater
               </h3>
-              
-              <div className="grid md:grid-cols-3 gap-4">
+
+              <div className="grid md:grid-cols-4 gap-4">
                 <div className="bg-white rounded-lg p-4">
                   <h4 className="font-semibold text-gray-700 mb-2">Årlig produksjon</h4>
-                  <p className="text-2xl font-bold text-green-600">
-                    {Math.round(assessmentResult.roofAnalysis.analysis.estimatedCapacity * assessmentResult.locationAnalysis.averageProduction).toLocaleString('no-NO')} kWh
-                  </p>
+                  <p className="text-2xl font-bold text-green-600">{formatEnergy(annualProduction)}</p>
                   <p className="text-xs text-gray-500 mt-1">Estimert strømproduksjon</p>
                 </div>
-                
+
                 <div className="bg-white rounded-lg p-4">
                   <h4 className="font-semibold text-gray-700 mb-2">CO₂-besparelse</h4>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {Math.round(assessmentResult.roofAnalysis.analysis.estimatedCapacity * assessmentResult.locationAnalysis.averageProduction * 0.4 / 1000)} tonn/år
-                  </p>
+                  <p className="text-2xl font-bold text-blue-600">{formatTonsPerYear(co2Savings)}</p>
                   <p className="text-xs text-gray-500 mt-1">Redusert CO₂-utslipp</p>
                 </div>
-                
+
                 <div className="bg-white rounded-lg p-4">
                   <h4 className="font-semibold text-gray-700 mb-2">Strømbesparelse</h4>
-                  <p className="text-2xl font-bold text-purple-600">
-                    {Math.round(assessmentResult.roofAnalysis.analysis.estimatedCapacity * assessmentResult.locationAnalysis.averageProduction * 1.2).toLocaleString('no-NO')} kr
-                  </p>
+                  <p className="text-2xl font-bold text-purple-600">{formatCurrency(annualSavings)}</p>
                   <p className="text-xs text-gray-500 mt-1">Estimert årlig besparelse</p>
                 </div>
+
+                <div className="bg-white rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-700 mb-2">Tilbakebetalingstid</h4>
+                  <p className="text-2xl font-bold text-orange-600 flex items-center justify-center">
+                    <Clock className="w-6 h-6 mr-2" />
+                    {formatYears(paybackPeriod)}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Basert på Enova-støtte og strømpris 1,20 kr/kWh</p>
+                </div>
               </div>
+
+              {assessmentResult.recommendations?.weatherInsights?.length > 0 && (
+                <div className="mt-4 bg-white rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-700 mb-2">Værforhold å merke seg</h4>
+                  <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                    {assessmentResult.recommendations.weatherInsights.map((insight, index) => (
+                      <li key={index}>{insight}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
             
             {/* API Integration Info */}
