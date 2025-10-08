@@ -204,18 +204,41 @@ router.get('/satellite-image', async (req, res) => {
       });
     }
 
-    console.log(`Successfully fetched image, size: ${response.data.length} bytes, type: ${contentType}`);
+    const imageBuffer = Buffer.from(response.data);
 
-    // Send bildet til frontend
+    console.log(`Successfully fetched image, size: ${imageBuffer.length} bytes, type: ${contentType}`);
+
+    if ((req.query.format || req.query.response) === 'data-url') {
+      res.set({
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=86400',
+      });
+
+      const base64 = imageBuffer.toString('base64');
+      const dataUrl = `data:${contentType};base64,${base64}`;
+
+      return res.json({
+        success: true,
+        data: {
+          dataUrl,
+          contentType,
+          width: Number(width),
+          height: Number(height),
+          bbox,
+        },
+      });
+    }
+
+    // Send bildet til frontend som binærdata
     res.set({
       'Content-Type': contentType,
-      'Content-Length': response.data.length,
+      'Content-Length': imageBuffer.length,
       'Cache-Control': 'public, max-age=86400', // Cache 24 timer
       'Access-Control-Allow-Origin': '*',
     });
 
-    res.send(response.data);
-    
+    res.send(imageBuffer);
+
   } catch (error) {
     console.error('Satellite image proxy error:', error.message);
     
