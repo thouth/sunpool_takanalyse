@@ -92,6 +92,13 @@ const SolarAssessmentApp = () => {
     return 'Mindre egnet for solceller';
   };
 
+  // Generer riktig Norgeskart URL
+  const getNorgeskartUrl = (coords) => {
+    if (!coords) return '#';
+    // Format: lat,lon som EPSG:4326 koordinater
+    return `https://norgeskart.no/#!?project=norgeskart&layers=1002&zoom=17&lat=${coords.lat.toFixed(6)}&lon=${coords.lon.toFixed(6)}&markerLat=${coords.lat.toFixed(6)}&markerLon=${coords.lon.toFixed(6)}&panel=searchOptionsPanel`;
+  };
+
   const weather = assessmentResult?.weather;
   const roofAnalysis = assessmentResult?.roofAnalysis?.analysis;
   const locationAnalysis = assessmentResult?.locationAnalysis;
@@ -274,12 +281,12 @@ const SolarAssessmentApp = () => {
                       src={assessmentResult.roofAnalysis.imageUrl}
                       alt="Satellittbilde av takflate"
                       className="w-full h-auto"
-                      onError={() => {
-                        console.error('Failed to load satellite image');
+                      onError={(e) => {
+                        console.error('Failed to load satellite image from:', assessmentResult.roofAnalysis.imageUrl);
                         setImageError(true);
                       }}
                       onLoad={() => {
-                        console.log('Satellite image loaded successfully');
+                        console.log('Satellite image loaded successfully from:', assessmentResult.roofAnalysis.imageUrl);
                       }}
                     />
                   </div>
@@ -287,56 +294,22 @@ const SolarAssessmentApp = () => {
                   <div className="mb-4 bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
                     <Camera className="w-16 h-16 mx-auto text-gray-400 mb-3" />
                     <p className="text-gray-700 font-medium mb-2">
-                      Bildet kunne ikke lastes fra Norge i bilder
+                      Satellittbildet er midlertidig utilgjengelig
                     </p>
                     <p className="text-sm text-gray-500 mb-4">
-                      Dette kan skyldes midlertidig utilgjengelighet i WMS-tjenesten
+                      WMS-tjenesten fra Norge i bilder svarer ikke for øyeblikket
                     </p>
                     <a
-                      href={`https://www.norgeskart.no/#!?project=norgeskart&zoom=17&lat=${assessmentResult.coordinates.lat}&lon=${assessmentResult.coordinates.lon}`}
+                      href={getNorgeskartUrl(assessmentResult.coordinates)}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center text-blue-600 hover:text-blue-800 font-medium"
+                      className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
                     >
                       <ExternalLink className="w-4 h-4 mr-2" />
-                      Åpne i Norgeskart.no
+                      Åpne i Norgeskart
                     </a>
                   </div>
                 )}
-
-                <div className="bg-blue-50 rounded-lg p-4">
-                  <p className="text-sm text-gray-700 font-medium mb-2">
-                    WMS-tjeneste for ortofoto:
-                  </p>
-                  <div className="bg-white rounded border border-blue-200 p-3 mb-3">
-                    <code className="text-xs text-gray-700 break-all block">
-                      {assessmentResult.roofAnalysis.imageUrl}
-                    </code>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <a
-                      href={assessmentResult.roofAnalysis.imageUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-                    >
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      Åpne i ny fane
-                    </a>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(assessmentResult.roofAnalysis.imageUrl);
-                        alert('URL kopiert til utklippstavle');
-                      }}
-                      className="text-sm bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition"
-                    >
-                      Kopier URL
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-3">
-                    💡 URL-en kan brukes i GIS-applikasjoner som QGIS eller ArcGIS
-                  </p>
-                </div>
               </div>
             )}
             
