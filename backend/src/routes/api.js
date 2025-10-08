@@ -118,9 +118,14 @@ router.get(
 
 router.get('/assessment', assessmentController.listAssessments);
 
-router.get('/satellite-image', async (req, res, next) => {
+/**
+ * Satellite Image Proxy
+ * Henter ortofoto fra Norge i bilder via WMS
+ * Dette omgår CORS-problemer
+ */
+router.get('/satellite-image', async (req, res) => {
   try {
-    const { lat, lon, width = 1024, height = 1024 } = req.query;
+    const { lat, lon, width = 800, height = 800 } = req.query;
 
     if (!lat || !lon) {
       return res.status(400).json({
@@ -129,28 +134,59 @@ router.get('/satellite-image', async (req, res, next) => {
       });
     }
 
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lon);
+
+    // Større bbox for bedre oversikt (ca 400m x 400m)
     const bbox = [
-      parseFloat(lon) - 0.002,
-      parseFloat(lat) - 0.002,
-      parseFloat(lon) + 0.002,
-      parseFloat(lat) + 0.002,
+      longitude - 0.003,
+      latitude - 0.003,
+      longitude + 0.003,
+      latitude + 0.003,
     ].join(',');
 
-    const wmsUrl = process.env.KARTVERKET_WMS_URL || 'https://wms.geonorge.no/skwms1/wms.nib';
-    const imageUrl = `${wmsUrl}?service=WMS&version=1.3.0&request=GetMap&layers=ortofoto&styles=&format=image/png&transparent=false&width=${width}&height=${height}&crs=EPSG:4326&bbox=${bbox}`;
+    // Bruk riktig WMS endepunkt for Norge i bilder
+    const wmsParams = new URLSearchParams({
+      SERVICE: 'WMS',
+      VERSION: '1.3.0',
+      REQUEST: 'GetMap',
+      LAYERS: 'ortofoto',
+      STYLES: '',
+      FORMAT: 'image/jpeg',
+      TRANSPARENT: 'FALSE',
+      CRS: 'EPSG:4326',
+      BBOX: bbox,
+      WIDTH: width.toString(),
+      HEIGHT: height.toString(),
+    });
 
-    console.log(`Proxying satellite image: ${imageUrl}`);
+    const imageUrl = `https://wms.geonorge.no/skwms1/wms.nib?${wmsParams.toString()}`;
 
+    console.log(`Fetching satellite image: ${imageUrl}`);
+
+    // Hent bildet fra Kartverket
     const response = await axios.get(imageUrl, {
       responseType: 'arraybuffer',
       timeout: 30000,
       headers: {
         'User-Agent': 'Solar-Assessment-App/1.0',
+        'Accept': 'image/jpeg,image/png,image/*',
       },
     });
 
+    // Sjekk at vi faktisk fikk et bilde
+    const contentType = response.headers['content-type'];
+    if (!contentType || !contentType.startsWith('image/')) {
+      console.error('Invalid content type received:', contentType);
+      return res.status(500).json({
+        success: false,
+        error: 'Invalid image format received from WMS service',
+      });
+    }
+
+    // Send bildet til frontend
     res.set({
-      'Content-Type': response.headers['content-type'] || 'image/png',
+      'Content-Type': contentType,
       'Cache-Control': 'public, max-age=86400',
       'Access-Control-Allow-Origin': '*',
     });
@@ -158,11 +194,13 @@ router.get('/satellite-image', async (req, res, next) => {
     res.send(response.data);
   } catch (error) {
     console.error('Satellite image proxy error:', error.message);
-
-    res.status(404).json({
+    
+    res.status(500).json({
       success: false,
       error: 'Could not fetch satellite image',
-      details: error.message,
+      details: error.response?.status 
+        ? `WMS service returned status ${error.response.status}`
+        : error.message,
     });
   }
 });
