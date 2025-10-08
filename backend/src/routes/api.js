@@ -1,5 +1,6 @@
 // backend/src/routes/api.js
 const express = require('express');
+const axios = require('axios');
 
 const companyController = require('../controllers/companyController');
 const addressController = require('../controllers/addressController');
@@ -116,5 +117,54 @@ router.get(
 );
 
 router.get('/assessment', assessmentController.listAssessments);
+
+router.get('/satellite-image', async (req, res, next) => {
+  try {
+    const { lat, lon, width = 1024, height = 1024 } = req.query;
+
+    if (!lat || !lon) {
+      return res.status(400).json({
+        success: false,
+        error: 'Latitude and longitude are required',
+      });
+    }
+
+    const bbox = [
+      parseFloat(lon) - 0.002,
+      parseFloat(lat) - 0.002,
+      parseFloat(lon) + 0.002,
+      parseFloat(lat) + 0.002,
+    ].join(',');
+
+    const wmsUrl = process.env.KARTVERKET_WMS_URL || 'https://wms.geonorge.no/skwms1/wms.nib';
+    const imageUrl = `${wmsUrl}?service=WMS&version=1.3.0&request=GetMap&layers=ortofoto&styles=&format=image/png&transparent=false&width=${width}&height=${height}&crs=EPSG:4326&bbox=${bbox}`;
+
+    console.log(`Proxying satellite image: ${imageUrl}`);
+
+    const response = await axios.get(imageUrl, {
+      responseType: 'arraybuffer',
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'Solar-Assessment-App/1.0',
+      },
+    });
+
+    res.set({
+      'Content-Type': response.headers['content-type'] || 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    });
+
+    res.send(response.data);
+  } catch (error) {
+    console.error('Satellite image proxy error:', error.message);
+
+    res.status(404).json({
+      success: false,
+      error: 'Could not fetch satellite image',
+      details: error.message,
+    });
+  }
+});
 
 module.exports = router;
