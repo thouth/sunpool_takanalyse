@@ -16,6 +16,8 @@ services:
         value: 3001
       - key: CORS_ORIGIN
         value: https://solar-assessment-frontend.onrender.com
+      - key: API_BASE_URL
+        value: https://solar-assessment-backend.onrender.com/api
       - key: MOCK_EXTERNAL_APIS
         value: "false"
       - key: RATE_LIMIT_WINDOW_MS
@@ -32,8 +34,6 @@ services:
         value: https://wms.geonorge.no/skwms1/wms.nib
       - key: KARTVERKET_ELEVATION_API
         value: https://ws.geonorge.no/hoydedata/v1
-      - key: API_BASE_URL
-        value: https://solar-assessment-backend.onrender.com/api
 
   # Frontend Static Site
   - type: web
