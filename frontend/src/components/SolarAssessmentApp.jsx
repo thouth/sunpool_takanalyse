@@ -1,6 +1,6 @@
 // frontend/src/components/SolarAssessmentApp.jsx
 import React, { useState } from 'react';
-import { Sun, Building, MapPin, Wind, AlertCircle, CheckCircle, Search, Loader2, Zap, Cloud, Home, Camera, Map, Info, ThermometerSun, Droplets, Clock } from 'lucide-react';
+import { Sun, Building, MapPin, Wind, AlertCircle, CheckCircle, Search, Loader2, Zap, Cloud, Home, Camera, Map, Info, ThermometerSun, Droplets, Clock, ExternalLink } from 'lucide-react';
 import { assessmentService } from '../services/api';
 import {
   calculateAnnualProduction,
@@ -30,11 +30,13 @@ const SolarAssessmentApp = () => {
   const [assessmentResult, setAssessmentResult] = useState(null);
   const [errors, setErrors] = useState({});
   const [showApiInfo, setShowApiInfo] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const performAssessment = async () => {
     setIsLoading(true);
     setErrors({});
     setAssessmentResult(null);
+    setImageError(false);
     
     try {
       setCurrentStep('Starter vurdering...');
@@ -258,57 +260,67 @@ const SolarAssessmentApp = () => {
               </div>
             </div>
             
-            {/* Satellite Image Preview */}
+            {/* Satellite Image */}
             {assessmentResult.roofAnalysis && assessmentResult.roofAnalysis.imageUrl && (
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
                   <Camera className="w-5 h-5 mr-2 text-blue-500" />
                   Ortofoto fra Norge i bilder
                 </h3>
-
-                {/* Faktisk bildevisning */}
-                <div className="mb-4 rounded-lg overflow-hidden border-2 border-gray-200">
-                  <img
-                    src={assessmentResult.roofAnalysis.imageUrl}
-                    alt="Satellittbilde av takflate"
-                    className="w-full h-auto"
-                    onError={(e) => {
-                      // Hvis bildet ikke laster, vis placeholder
-                      e.target.style.display = 'none';
-                      e.target.nextElementSibling.style.display = 'block';
-                    }}
-                  />
-                  <div
-                    style={{ display: 'none' }}
-                    className="bg-gray-100 p-8 text-center"
-                  >
-                    <Camera className="w-16 h-16 mx-auto text-gray-400 mb-2" />
-                    <p className="text-gray-600">
-                      Bildet kunne ikke lastes direkte fra Kartverket
-                    </p>
-                    <p className="text-sm text-gray-500 mt-2">
-                      Dette kan skyldes CORS-restriksjoner eller nettverksproblemer
-                    </p>
+                
+                {!imageError ? (
+                  <div className="mb-4 rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-50">
+                    <img 
+                      src={assessmentResult.roofAnalysis.imageUrl}
+                      alt="Satellittbilde av takflate"
+                      className="w-full h-auto"
+                      onError={() => {
+                        console.error('Failed to load satellite image');
+                        setImageError(true);
+                      }}
+                      onLoad={() => {
+                        console.log('Satellite image loaded successfully');
+                      }}
+                    />
                   </div>
-                </div>
+                ) : (
+                  <div className="mb-4 bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
+                    <Camera className="w-16 h-16 mx-auto text-gray-400 mb-3" />
+                    <p className="text-gray-700 font-medium mb-2">
+                      Bildet kunne ikke lastes fra Norge i bilder
+                    </p>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Dette kan skyldes midlertidig utilgjengelighet i WMS-tjenesten
+                    </p>
+                    <a
+                      href={`https://www.norgeskart.no/#!?project=norgeskart&zoom=17&lat=${assessmentResult.coordinates.lat}&lon=${assessmentResult.coordinates.lon}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Åpne i Norgeskart.no
+                    </a>
+                  </div>
+                )}
 
-                {/* Teknisk info */}
                 <div className="bg-blue-50 rounded-lg p-4">
                   <p className="text-sm text-gray-700 font-medium mb-2">
-                    WMS-tjeneste URL for ortofoto:
+                    WMS-tjeneste for ortofoto:
                   </p>
-                  <div className="bg-white rounded border border-blue-200 p-2">
-                    <code className="text-xs text-gray-800 break-all">
+                  <div className="bg-white rounded border border-blue-200 p-3 mb-3">
+                    <code className="text-xs text-gray-700 break-all block">
                       {assessmentResult.roofAnalysis.imageUrl}
                     </code>
                   </div>
-                  <div className="mt-3 flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <a
                       href={assessmentResult.roofAnalysis.imageUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+                      className="inline-flex items-center text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
                     >
+                      <ExternalLink className="w-4 h-4 mr-2" />
                       Åpne i ny fane
                     </a>
                     <button
@@ -322,7 +334,7 @@ const SolarAssessmentApp = () => {
                     </button>
                   </div>
                   <p className="text-xs text-gray-600 mt-3">
-                    💡 URL-en kan brukes direkte i GIS-applikasjoner som QGIS eller ArcGIS
+                    💡 URL-en kan brukes i GIS-applikasjoner som QGIS eller ArcGIS
                   </p>
                 </div>
               </div>
@@ -339,31 +351,35 @@ const SolarAssessmentApp = () => {
                 <div className="space-y-3">
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Taktype:</span>
-                    <span className="font-medium">{assessmentResult.roofAnalysis.analysis.roofType}</span>
+                    <span className="font-medium">{roofAnalysis.roofType}</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Takareal:</span>
-                    <span className="font-medium">{assessmentResult.roofAnalysis.analysis.roofArea} m²</span>
+                    <span className="font-medium">{roofAnalysis.roofArea} m²</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Brukbart areal:</span>
-                    <span className="font-medium">{assessmentResult.roofAnalysis.analysis.usableArea}%</span>
+                    <span className="font-medium">{roofAnalysis.usableArea}%</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Orientering:</span>
-                    <span className="font-medium">{assessmentResult.roofAnalysis.analysis.orientation}</span>
+                    <span className="font-medium">{roofAnalysis.orientation}</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Takvinkel:</span>
-                    <span className="font-medium">{assessmentResult.roofAnalysis.analysis.tiltAngle}°</span>
+                    <span className="font-medium">{roofAnalysis.tiltAngle}°</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Hindringer:</span>
-                    <span className="font-medium text-sm">{assessmentResult.roofAnalysis.analysis.obstacles}</span>
+                    <span className="font-medium text-sm">{roofAnalysis.obstacles}</span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b">
+                    <span className="text-gray-600">Takstand:</span>
+                    <span className="font-medium">{roofAnalysis.roofCondition}</span>
                   </div>
                   <div className="flex justify-between py-2">
                     <span className="text-gray-600">Estimert kapasitet:</span>
-                    <span className="font-medium text-green-600">{formatNumber(roofAnalysis?.estimatedCapacity ?? 0, { maximumFractionDigits: 1 })} kWp</span>
+                    <span className="font-medium text-green-600">{formatNumber(capacity, { maximumFractionDigits: 1 })} kWp</span>
                   </div>
                 </div>
               </div>
@@ -377,31 +393,31 @@ const SolarAssessmentApp = () => {
                 <div className="space-y-3">
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Region:</span>
-                    <span className="font-medium">{assessmentResult.locationAnalysis.region}</span>
+                    <span className="font-medium">{locationAnalysis.region}</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Høyde over havet:</span>
-                    <span className="font-medium">{assessmentResult.locationAnalysis.elevation} m</span>
+                    <span className="font-medium">{locationAnalysis.elevation} m</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Årlige soltimer:</span>
-                    <span className="font-medium">{assessmentResult.locationAnalysis.annualSolarHours} timer</span>
+                    <span className="font-medium">{locationAnalysis.annualSolarHours} timer</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Solinnstråling:</span>
-                    <span className="font-medium">{assessmentResult.locationAnalysis.solarIrradiation} W/m²</span>
+                    <span className="font-medium">{locationAnalysis.solarIrradiation} W/m²</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Vindforhold:</span>
-                    <span className="font-medium">{assessmentResult.locationAnalysis.windCondition}</span>
+                    <span className="font-medium">{locationAnalysis.windCondition}</span>
                   </div>
                   <div className="flex justify-between py-2 border-b">
                     <span className="text-gray-600">Snølast:</span>
-                    <span className="font-medium">{assessmentResult.locationAnalysis.snowLoad}</span>
+                    <span className="font-medium">{locationAnalysis.snowLoad}</span>
                   </div>
                   <div className="flex justify-between py-2">
                     <span className="text-gray-600">Forventet produksjon:</span>
-                    <span className="font-medium text-blue-600">{formatNumber(locationAnalysis?.averageProduction ?? 0)} kWh/kWp/år</span>
+                    <span className="font-medium text-blue-600">{formatNumber(specificYield)} kWh/kWp/år</span>
                   </div>
                 </div>
               </div>
@@ -477,7 +493,7 @@ const SolarAssessmentApp = () => {
                     <Clock className="w-6 h-6 mr-2" />
                     {formatYears(paybackPeriod)}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">Basert på Enova-støtte og strømpris 1,20 kr/kWh</p>
+                  <p className="text-xs text-gray-500 mt-1">Med Enova-støtte (35%)</p>
                 </div>
               </div>
 
@@ -493,36 +509,8 @@ const SolarAssessmentApp = () => {
               )}
             </div>
             
-            {/* API Integration Info */}
-            <div className="bg-gray-50 rounded-xl shadow-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center">
-                <Info className="w-5 h-5 mr-2 text-gray-600" />
-                Datakilder og API-integrasjoner
-              </h3>
-              <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-600">
-                <div>
-                  <p className="font-medium text-gray-700 mb-2">Implementerte datakilder:</p>
-                  <ul className="space-y-1">
-                    <li>• Brønnøysundregisteret (org.nr validering)</li>
-                    <li>• Kartverket Adresse-API (geokoding)</li>
-                    <li>• Norge i bilder WMS (ortofoto)</li>
-                    <li>• Kartverket Høydedata API</li>
-                  </ul>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-700 mb-2">For produksjon trengs også:</p>
-                  <ul className="space-y-1">
-                    <li>• Computer Vision ML-modell for takanalyse</li>
-                    <li>• MET.no API for værdata</li>
-                    <li>• PVGIS for nøyaktig solinnstråling</li>
-                    <li>• NVE Atlas for vinddata</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            
             <div className="text-center text-sm text-gray-500">
-              <p>Analyse utført: {assessmentResult.timestamp}</p>
+              <p>Analyse utført: {new Date(assessmentResult.timestamp).toLocaleString('no-NO')}</p>
             </div>
           </div>
         )}
