@@ -121,13 +121,13 @@ router.get('/assessment', assessmentController.listAssessments);
 /**
  * Satellite Image Proxy
  * Henter ortofoto fra Norge i bilder via WMS
- * Dette omgår CORS-problemer
  */
 router.get('/satellite-image', async (req, res) => {
   try {
     const { lat, lon, width = 800, height = 800 } = req.query;
 
     if (!lat || !lon) {
+      console.error('Missing coordinates in satellite-image request');
       return res.status(400).json({
         success: false,
         error: 'Latitude and longitude are required',
@@ -137,15 +137,26 @@ router.get('/satellite-image', async (req, res) => {
     const latitude = parseFloat(lat);
     const longitude = parseFloat(lon);
 
+    if (isNaN(latitude) || isNaN(longitude)) {
+      console.error('Invalid coordinates:', lat, lon);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid coordinates',
+      });
+    }
+
     // Større bbox for bedre oversikt (ca 400m x 400m)
+    const bboxSize = 0.003;
     const bbox = [
-      longitude - 0.003,
-      latitude - 0.003,
-      longitude + 0.003,
-      latitude + 0.003,
+      longitude - bboxSize,
+      latitude - bboxSize,
+      longitude + bboxSize,
+      latitude + bboxSize,
     ].join(',');
 
-    // Bruk riktig WMS endepunkt for Norge i bilder
+    // WMS endepunkt
+    const wmsBaseUrl = 'https://wms.geonorge.no/skwms1/wms.nib';
+    
     const wmsParams = new URLSearchParams({
       SERVICE: 'WMS',
       VERSION: '1.3.0',
@@ -160,44 +171,62 @@ router.get('/satellite-image', async (req, res) => {
       HEIGHT: height.toString(),
     });
 
-    const imageUrl = `https://wms.geonorge.no/skwms1/wms.nib?${wmsParams.toString()}`;
+    const imageUrl = `${wmsBaseUrl}?${wmsParams.toString()}`;
 
-    console.log(`Fetching satellite image: ${imageUrl}`);
+    console.log(`Fetching satellite image from: ${imageUrl}`);
 
-    // Hent bildet fra Kartverket
+    // Hent bildet med lengre timeout
     const response = await axios.get(imageUrl, {
       responseType: 'arraybuffer',
-      timeout: 30000,
+      timeout: 45000, // 45 sekunder
+      maxRedirects: 5,
       headers: {
         'User-Agent': 'Solar-Assessment-App/1.0',
         'Accept': 'image/jpeg,image/png,image/*',
       },
+      validateStatus: (status) => status < 500, // Accept redirects
     });
 
     // Sjekk at vi faktisk fikk et bilde
     const contentType = response.headers['content-type'];
+    
     if (!contentType || !contentType.startsWith('image/')) {
       console.error('Invalid content type received:', contentType);
+      console.error('Response status:', response.status);
+      console.error('Response data (first 200 chars):', 
+        Buffer.from(response.data).toString('utf8', 0, 200)
+      );
+      
       return res.status(500).json({
         success: false,
-        error: 'Invalid image format received from WMS service',
+        error: 'WMS service did not return an image',
+        details: `Received content-type: ${contentType}`,
       });
     }
+
+    console.log(`Successfully fetched image, size: ${response.data.length} bytes, type: ${contentType}`);
 
     // Send bildet til frontend
     res.set({
       'Content-Type': contentType,
-      'Cache-Control': 'public, max-age=86400',
+      'Content-Length': response.data.length,
+      'Cache-Control': 'public, max-age=86400', // Cache 24 timer
       'Access-Control-Allow-Origin': '*',
     });
 
     res.send(response.data);
+    
   } catch (error) {
     console.error('Satellite image proxy error:', error.message);
     
+    if (error.response) {
+      console.error('WMS service responded with status:', error.response.status);
+      console.error('Response headers:', error.response.headers);
+    }
+    
     res.status(500).json({
       success: false,
-      error: 'Could not fetch satellite image',
+      error: 'Could not fetch satellite image from Norge i bilder',
       details: error.response?.status 
         ? `WMS service returned status ${error.response.status}`
         : error.message,
