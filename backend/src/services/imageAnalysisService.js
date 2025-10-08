@@ -77,7 +77,7 @@ class ImageAnalysisService {
     return {
       roofType,
       roofArea: Math.round(baseArea),
-      usableArea: Math.round(usablePercentage),
+      usableArea: Math.round(usableArea),
       estimatedCapacity,
       orientation: optimalOrientation,
       tiltAngle,
@@ -91,7 +91,7 @@ class ImageAnalysisService {
   }
 
   getRoofTypeWeights(coordinates) {
-    // Næringsbygg i Norge har oftere skråtak enn flatt tak
+    // Start med et generelt bilde av norske næringsbygg
     const weights = {
       'Skråtak': 45,      // Mest vanlig
       'Saltak': 25,       // Tradisjonelt
@@ -99,22 +99,109 @@ class ImageAnalysisService {
       'Valmtak': 10,      // Eldre bygg
       'Pulttak': 5        // Mindre vanlig
     };
-    
-    // Juster basert på region
+
+    // Juster basert på klimasoner
     if (coordinates.lat > 62) {
       // Nord-Norge: Mer skråtak pga snø
       weights['Skråtak'] += 10;
       weights['Saltak'] += 5;
       weights['Flatt tak'] -= 10;
     }
-    
+
     if (coordinates.lat < 59) {
       // Sør-Norge: Mer flatt tak på nye bygg
       weights['Flatt tak'] += 10;
       weights['Skråtak'] -= 5;
     }
-    
+
+    // Finkornet heuristikk basert på næringsklynger og tettbygde strøk
+    const regionalAdjustments = this.getRegionalRoofAdjustments(coordinates);
+    this.applyWeightAdjustments(weights, regionalAdjustments);
+
+    // Sørg for at vektene forblir positive og konsistente
+    this.ensureMinimumWeights(weights, 1);
+
     return weights;
+  }
+
+  getRegionalRoofAdjustments(coordinates) {
+    const { lat, lon } = coordinates;
+
+    const regions = [
+      {
+        name: 'Stavanger/Sandnes næringskorridor',
+        bounds: { latMin: 58.83, latMax: 58.96, lonMin: 5.60, lonMax: 5.85 },
+        adjustments: { 'Flatt tak': 25, 'Skråtak': -15, 'Saltak': -5 },
+      },
+      {
+        name: 'Forus industriområde',
+        bounds: { latMin: 58.87, latMax: 58.93, lonMin: 5.68, lonMax: 5.77 },
+        adjustments: { 'Flatt tak': 30, 'Skråtak': -20, 'Valmtak': -5 },
+      },
+      {
+        name: 'Oslo sentrum og Bjørvika',
+        bounds: { latMin: 59.88, latMax: 59.93, lonMin: 10.71, lonMax: 10.80 },
+        adjustments: { 'Flatt tak': 20, 'Skråtak': -10, 'Saltak': -5 },
+      },
+      {
+        name: 'Bergen sentrum og Åsane næring',
+        bounds: { latMin: 60.31, latMax: 60.45, lonMin: 5.20, lonMax: 5.40 },
+        adjustments: { 'Flatt tak': 15, 'Skråtak': -5 },
+      },
+      {
+        name: 'Trondheim industri og Tiller',
+        bounds: { latMin: 63.38, latMax: 63.45, lonMin: 10.33, lonMax: 10.46 },
+        adjustments: { 'Flatt tak': 12, 'Skråtak': -5 },
+      },
+      {
+        name: 'Nordnorske kystområder med værutsatt klima',
+        bounds: { latMin: 65.0, latMax: 71.5, lonMin: 11.0, lonMax: 25.0 },
+        adjustments: { 'Skråtak': 10, 'Saltak': 5, 'Flatt tak': -12 },
+      },
+    ];
+
+    // Finn alle regioner som matcher og kombiner justeringene
+    const matchingAdjustments = regions
+      .filter(region =>
+        lat >= region.bounds.latMin &&
+        lat <= region.bounds.latMax &&
+        lon >= region.bounds.lonMin &&
+        lon <= region.bounds.lonMax
+      )
+      .map(region => region.adjustments);
+
+    if (matchingAdjustments.length > 0) {
+      return matchingAdjustments.reduce((combined, adjustment) => {
+        Object.entries(adjustment).forEach(([key, delta]) => {
+          combined[key] = (combined[key] || 0) + delta;
+        });
+        return combined;
+      }, {});
+    }
+
+    // Ekstra heuristikk: kystnære byområder sør i landet har ofte flate tak
+    const nearSouthernCoast = lat >= 58 && lat < 60 && lon > 4 && lon < 7;
+    if (nearSouthernCoast) {
+      return { 'Flatt tak': 12, 'Skråtak': -7 };
+    }
+
+    return {};
+  }
+
+  applyWeightAdjustments(weights, adjustments) {
+    Object.entries(adjustments).forEach(([key, delta]) => {
+      if (weights[key] !== undefined) {
+        weights[key] += delta;
+      }
+    });
+  }
+
+  ensureMinimumWeights(weights, minimum) {
+    Object.keys(weights).forEach(key => {
+      if (weights[key] < minimum) {
+        weights[key] = minimum;
+      }
+    });
   }
 
   calculateOptimalOrientation(coordinates) {
