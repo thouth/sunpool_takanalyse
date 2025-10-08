@@ -1,7 +1,7 @@
 // frontend/src/components/SolarAssessmentApp.jsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sun, Building, MapPin, Wind, AlertCircle, CheckCircle, Search, Loader2, Zap, Cloud, Home, Camera, Map, Info, ThermometerSun, Droplets, Clock, ExternalLink } from 'lucide-react';
-import { assessmentService } from '../services/api';
+import { assessmentService, getDefaultHeaders } from '../services/api';
 import {
   calculateAnnualProduction,
   calculateCo2Savings,
@@ -31,12 +31,16 @@ const SolarAssessmentApp = () => {
   const [errors, setErrors] = useState({});
   const [showApiInfo, setShowApiInfo] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [satelliteImageUrl, setSatelliteImageUrl] = useState(null);
+  const [isSatelliteImageLoading, setIsSatelliteImageLoading] = useState(false);
 
   const performAssessment = async () => {
     setIsLoading(true);
     setErrors({});
     setAssessmentResult(null);
     setImageError(false);
+    setSatelliteImageUrl(null);
+    setIsSatelliteImageLoading(false);
     
     try {
       setCurrentStep('Starter vurdering...');
@@ -51,7 +55,7 @@ const SolarAssessmentApp = () => {
       
       setAssessmentResult(result);
       setCoordinates(result.coordinates);
-      
+
     } catch (error) {
       console.error('Assessment error:', error);
       setErrors({ general: error.message || 'En feil oppstod under vurderingen' });
@@ -114,6 +118,58 @@ const SolarAssessmentApp = () => {
   const formattedWeatherUpdatedAt = weather?.updatedAt
     ? new Date(weather.updatedAt).toLocaleString('no-NO')
     : null;
+
+  useEffect(() => {
+    const loadSatelliteImage = async () => {
+      const imageEndpoint = assessmentResult?.roofAnalysis?.imageUrl;
+
+      if (!imageEndpoint) {
+        setSatelliteImageUrl(null);
+        setIsSatelliteImageLoading(false);
+        return;
+      }
+
+      try {
+        setImageError(false);
+        setIsSatelliteImageLoading(true);
+
+        let imageUrl;
+
+        try {
+          imageUrl = new URL(imageEndpoint);
+        } catch (error) {
+          imageUrl = new URL(imageEndpoint, window.location.origin);
+        }
+
+        imageUrl.searchParams.set('format', 'data-url');
+
+        const response = await fetch(imageUrl.toString(), {
+          headers: getDefaultHeaders(),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const dataUrl = payload?.data?.dataUrl || payload?.dataUrl;
+
+        if (!dataUrl) {
+          throw new Error('Manglende dataUrl i svar fra API');
+        }
+
+        setSatelliteImageUrl(dataUrl);
+      } catch (error) {
+        console.error('Kunne ikke laste satellittbildet via proxy:', error);
+        setSatelliteImageUrl(null);
+        setImageError(true);
+      } finally {
+        setIsSatelliteImageLoading(false);
+      }
+    };
+
+    loadSatelliteImage();
+  }, [assessmentResult?.roofAnalysis?.imageUrl]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-yellow-50 p-4">
@@ -276,20 +332,27 @@ const SolarAssessmentApp = () => {
                 </h3>
                 
                 {!imageError ? (
-                  <div className="mb-4 rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-50">
-                    <img 
-                      src={assessmentResult.roofAnalysis.imageUrl}
-                      alt="Satellittbilde av takflate"
-                      className="w-full h-auto"
-                      onError={(e) => {
-                        console.error('Failed to load satellite image from:', assessmentResult.roofAnalysis.imageUrl);
-                        setImageError(true);
-                      }}
-                      onLoad={() => {
-                        console.log('Satellite image loaded successfully from:', assessmentResult.roofAnalysis.imageUrl);
-                      }}
-                    />
-                  </div>
+                  satelliteImageUrl ? (
+                    <div className="mb-4 rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-50">
+                      <img
+                        src={satelliteImageUrl}
+                        alt="Satellittbilde av takflate"
+                        className="w-full h-auto"
+                      />
+                    </div>
+                  ) : (
+                    isSatelliteImageLoading && (
+                      <div className="mb-4 bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
+                        <Loader2 className="w-8 h-8 mx-auto text-blue-500 mb-3 animate-spin" />
+                        <p className="text-gray-700 font-medium mb-1">
+                          Henter satellittbilde...
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Dette kan ta et øyeblikk ved første innlasting
+                        </p>
+                      </div>
+                    )
+                  )
                 ) : (
                   <div className="mb-4 bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
                     <Camera className="w-16 h-16 mx-auto text-gray-400 mb-3" />

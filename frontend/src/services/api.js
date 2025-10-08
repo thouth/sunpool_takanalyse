@@ -117,3 +117,4 @@ export const assessmentService = {
 };
 
 export { API_URL };
+export const getDefaultHeaders = () => buildHeaders();
