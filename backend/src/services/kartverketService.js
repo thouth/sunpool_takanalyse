@@ -49,32 +49,15 @@ class KartverketService {
   }
 
   getSatelliteImageUrl(coordinates) {
+    // Hvis mock mode er aktivert
     if (this.useMock && process.env.MOCK_SATELLITE_IMAGE_URL) {
       return process.env.MOCK_SATELLITE_IMAGE_URL;
     }
 
-    const bbox = [
-      coordinates.lon - 0.002,
-      coordinates.lat - 0.002,
-      coordinates.lon + 0.002,
-      coordinates.lat + 0.002,
-    ].join(',');
-
-    const params = new URLSearchParams({
-      service: 'WMS',
-      version: '1.3.0',
-      request: 'GetMap',
-      layers: 'ortofoto',
-      styles: '',
-      format: 'image/png',
-      transparent: 'false',
-      width: '1024',
-      height: '1024',
-      crs: 'EPSG:4326',
-      bbox,
-    });
-
-    return `${this.wmsUrl}?${params.toString()}`;
+    // Bruk backend proxy for å omgå CORS
+    // Dette peker på vår egen /api/satellite-image endpoint
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3001/api';
+    return `${apiBaseUrl}/satellite-image?lat=${coordinates.lat}&lon=${coordinates.lon}&width=800&height=800`;
   }
 
   async getElevation(coordinates) {
