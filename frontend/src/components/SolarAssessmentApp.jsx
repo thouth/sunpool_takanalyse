@@ -265,15 +265,64 @@ const SolarAssessmentApp = () => {
                   <Camera className="w-5 h-5 mr-2 text-blue-500" />
                   Ortofoto fra Norge i bilder
                 </h3>
-                <div className="bg-gray-100 rounded-lg p-4">
-                  <p className="text-sm text-gray-600 mb-2">
-                    WMS-tjeneste URL for ortofoto (kan brukes i GIS-applikasjoner):
+
+                {/* Faktisk bildevisning */}
+                <div className="mb-4 rounded-lg overflow-hidden border-2 border-gray-200">
+                  <img
+                    src={assessmentResult.roofAnalysis.imageUrl}
+                    alt="Satellittbilde av takflate"
+                    className="w-full h-auto"
+                    onError={(e) => {
+                      // Hvis bildet ikke laster, vis placeholder
+                      e.target.style.display = 'none';
+                      e.target.nextElementSibling.style.display = 'block';
+                    }}
+                  />
+                  <div
+                    style={{ display: 'none' }}
+                    className="bg-gray-100 p-8 text-center"
+                  >
+                    <Camera className="w-16 h-16 mx-auto text-gray-400 mb-2" />
+                    <p className="text-gray-600">
+                      Bildet kunne ikke lastes direkte fra Kartverket
+                    </p>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Dette kan skyldes CORS-restriksjoner eller nettverksproblemer
+                    </p>
+                  </div>
+                </div>
+
+                {/* Teknisk info */}
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-sm text-gray-700 font-medium mb-2">
+                    WMS-tjeneste URL for ortofoto:
                   </p>
-                  <code className="text-xs bg-gray-200 p-2 rounded block overflow-x-auto">
-                    {assessmentResult.roofAnalysis.imageUrl}
-                  </code>
-                  <p className="text-xs text-gray-500 mt-2">
-                    * I produksjon vil bildet vises her og analyseres med computer vision
+                  <div className="bg-white rounded border border-blue-200 p-2">
+                    <code className="text-xs text-gray-800 break-all">
+                      {assessmentResult.roofAnalysis.imageUrl}
+                    </code>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <a
+                      href={assessmentResult.roofAnalysis.imageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+                    >
+                      Åpne i ny fane
+                    </a>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(assessmentResult.roofAnalysis.imageUrl);
+                        alert('URL kopiert til utklippstavle');
+                      }}
+                      className="text-sm bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition"
+                    >
+                      Kopier URL
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-3">
+                    💡 URL-en kan brukes direkte i GIS-applikasjoner som QGIS eller ArcGIS
                   </p>
                 </div>
               </div>
