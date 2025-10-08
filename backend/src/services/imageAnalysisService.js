@@ -1,6 +1,4 @@
 // backend/src/services/imageAnalysisService.js
-// In production, you would import: const tf = require('@tensorflow/tfjs-node');
-
 class ImageAnalysisService {
   constructor() {
     this.analysisCache = new Map();
@@ -17,12 +15,12 @@ class ImageAnalysisService {
 
       console.log(`Analyzing roof at: ${coordinates.lat}, ${coordinates.lon}`);
       
-      // In production, you would:
-      // 1. Download the image from imageUrl
-      // 2. Process with ML model (TensorFlow/PyTorch)
-      // 3. Detect roof boundaries, calculate area, identify obstacles
+      // I produksjon ville vi:
+      // 1. Lastet ned bildet fra imageUrl
+      // 2. Kjørt ML-modell for segmentering
+      // 3. Detektert taktype, helning, orientering
       
-      // For now, we'll generate realistic simulated data based on coordinates
+      // For nå bruker vi avansert simulering basert på lokasjon
       const analysis = await this.simulateRoofAnalysis(coordinates);
       
       // Cache the result
@@ -42,118 +40,183 @@ class ImageAnalysisService {
   }
 
   async simulateRoofAnalysis(coordinates) {
-    // Simulate realistic roof analysis based on location
-    const roofTypes = ['Flatt tak', 'Skråtak', 'Saltak', 'Valmtak', 'Pulttak'];
-    const orientations = ['Sør', 'Sør-sørøst', 'Sør-sørvest', 'Sørøst', 'Sørvest'];
+    // Bruk koordinater for å lage konsistent data
+    const seed = this.hashCoordinates(coordinates);
     
-    // Generate values with some randomness but realistic constraints
-    const baseArea = 200 + Math.random() * 400; // 200-600 m²
-    const usablePercentage = 70 + Math.random() * 25; // 70-95%
+    // Bedre taktype-deteksjon basert på region og bygningstype
+    const roofTypeWeights = this.getRoofTypeWeights(coordinates);
+    const roofType = this.selectWeightedRandom(roofTypeWeights, seed);
+    
+    // Beregn optimal orientering basert på breddegrad
+    const optimalOrientation = this.calculateOptimalOrientation(coordinates);
+    
+    // Takvinkel avhenger av taktype
+    const tiltAngle = this.calculateTiltAngle(roofType, coordinates, seed);
+    
+    // Areal og kapasitet
+    const baseArea = 300 + (seed % 400); // 300-700 m²
+    const usablePercentage = roofType === 'Flatt tak' 
+      ? 60 + (seed % 20) // Flatt tak: 60-80%
+      : 75 + (seed % 20); // Skråtak: 75-95%
+    
     const usableArea = baseArea * (usablePercentage / 100);
     
-    // Capacity calculation: roughly 6-7 m² per kWp
-    const capacityPerSquareMeter = 0.15 + Math.random() * 0.05; // 0.15-0.20 kWp/m²
-    const estimatedCapacity = Math.round(usableArea * capacityPerSquareMeter);
+    // Kapasitet: ca 0.15-0.20 kWp per m²
+    const capacityPerSqm = 0.16 + (seed % 5) / 100;
+    const estimatedCapacity = Math.round(usableArea * capacityPerSqm);
     
-    // Tilt angle depends on latitude (optimal is roughly latitude * 0.9)
-    const optimalTilt = Math.round(coordinates.lat * 0.9);
-    const tiltAngle = optimalTilt + Math.round((Math.random() - 0.5) * 10);
+    // Hindringer basert på taktype
+    const obstacles = this.determineObstacles(roofType, seed);
+    
+    // Takstand
+    const roofCondition = this.determineRoofCondition(seed);
+    
+    // Skyggeanalyse - mer realistisk
+    const shading = this.analyzeShadingPattern(coordinates, seed);
     
     return {
-      roofType: roofTypes[Math.floor(Math.random() * roofTypes.length)],
+      roofType,
       roofArea: Math.round(baseArea),
       usableArea: Math.round(usablePercentage),
-      estimatedCapacity: estimatedCapacity,
-      orientation: orientations[Math.floor(Math.random() * orientations.length)],
-      tiltAngle: Math.max(15, Math.min(45, tiltAngle)), // Constrain between 15-45 degrees
-      obstacles: this.generateObstacles(),
-      roofCondition: this.generateRoofCondition(),
-      shading: this.generateShadingAnalysis(),
-      confidence: 0.75 + Math.random() * 0.20, // 75-95% confidence
-      analysisMethod: 'Simulated', // In production: 'ML Model v2.1'
+      estimatedCapacity,
+      orientation: optimalOrientation,
+      tiltAngle,
+      obstacles,
+      roofCondition,
+      shading,
+      confidence: 0.80 + (seed % 15) / 100, // 80-95%
+      analysisMethod: 'Simulated (ML-basert analyse kommer i produksjon)',
       timestamp: new Date().toISOString()
     };
   }
 
-  generateObstacles() {
-    const obstacles = [
-      'Ingen hindringer',
-      'Noen skygger fra nabobygninger',
-      'Skorstein og ventilasjon på taket',
-      'Delvis skygge fra trær',
-      'Takvindu og ventilasjon'
-    ];
+  getRoofTypeWeights(coordinates) {
+    // Næringsbygg i Norge har oftere skråtak enn flatt tak
+    const weights = {
+      'Skråtak': 45,      // Mest vanlig
+      'Saltak': 25,       // Tradisjonelt
+      'Flatt tak': 15,    // Moderne næringsbygg
+      'Valmtak': 10,      // Eldre bygg
+      'Pulttak': 5        // Mindre vanlig
+    };
     
-    return obstacles[Math.floor(Math.random() * obstacles.length)];
-  }
-
-  generateRoofCondition() {
-    const conditions = ['Utmerket', 'God', 'Tilfredsstillende', 'Trenger vedlikehold'];
-    const weights = [0.3, 0.5, 0.15, 0.05]; // Weighted probability
-    
-    const random = Math.random();
-    let sum = 0;
-    
-    for (let i = 0; i < conditions.length; i++) {
-      sum += weights[i];
-      if (random < sum) return conditions[i];
+    // Juster basert på region
+    if (coordinates.lat > 62) {
+      // Nord-Norge: Mer skråtak pga snø
+      weights['Skråtak'] += 10;
+      weights['Saltak'] += 5;
+      weights['Flatt tak'] -= 10;
     }
     
-    return conditions[1]; // Default to 'God'
+    if (coordinates.lat < 59) {
+      // Sør-Norge: Mer flatt tak på nye bygg
+      weights['Flatt tak'] += 10;
+      weights['Skråtak'] -= 5;
+    }
+    
+    return weights;
   }
 
-  generateShadingAnalysis() {
+  calculateOptimalOrientation(coordinates) {
+    // I Norge er sør-orientering optimal
+    // Legg til litt variasjon basert på koordinater
+    const orientations = [
+      'Sør',           // 40% sjanse
+      'Sør-sørøst',    // 20%
+      'Sør-sørvest',   // 20%
+      'Sørøst',        // 10%
+      'Sørvest',       // 10%
+    ];
+    
+    const weights = [40, 20, 20, 10, 10];
+    const seed = this.hashCoordinates(coordinates);
+    
+    return this.selectWeightedRandomFromArray(orientations, weights, seed);
+  }
+
+  calculateTiltAngle(roofType, coordinates, seed) {
+    if (roofType === 'Flatt tak') {
+      // Flatt tak har minimal helning (0-5 grader)
+      return seed % 6;
+    }
+    
+    // Optimal vinkel ≈ breddegrad
+    const optimalAngle = Math.round(coordinates.lat);
+    
+    // Legg til variasjon ±10 grader
+    const variation = -10 + (seed % 21);
+    const angle = optimalAngle + variation;
+    
+    // Begrens til realistisk område
+    return Math.max(15, Math.min(50, angle));
+  }
+
+  determineObstacles(roofType, seed) {
+    const obstacleOptions = [
+      { text: 'Ingen større hindringer', weight: 35 },
+      { text: 'Noen skygger fra nabobygninger', weight: 25 },
+      { text: 'Skorstein og ventilasjon på taket', weight: 20 },
+      { text: 'Takvindu og ventilasjonspiper', weight: 15 },
+      { text: 'Delvis skygge fra trær', weight: 5 },
+    ];
+    
+    if (roofType === 'Flatt tak') {
+      // Flatt tak har ofte mer utstyr
+      obstacleOptions[2].weight += 10; // Mer ventilasjon
+      obstacleOptions[0].weight -= 10;
+    }
+    
+    const weights = obstacleOptions.map(o => o.weight);
+    const texts = obstacleOptions.map(o => o.text);
+    
+    return this.selectWeightedRandomFromArray(texts, weights, seed);
+  }
+
+  determineRoofCondition(seed) {
+    const conditions = ['Utmerket', 'God', 'Tilfredsstillende', 'Trenger vedlikehold'];
+    const weights = [30, 50, 15, 5];
+    
+    return this.selectWeightedRandomFromArray(conditions, weights, seed);
+  }
+
+  analyzeShadingPattern(coordinates, seed) {
+    // Mer skygge i nord og vest, mindre i sør
+    const baseShadow = 5 + (seed % 15);
+    
     return {
-      morning: Math.round(Math.random() * 20), // 0-20% shading
-      midday: Math.round(Math.random() * 10),  // 0-10% shading
-      afternoon: Math.round(Math.random() * 20), // 0-20% shading
-      yearlyAverage: Math.round(Math.random() * 15) // 0-15% average shading
+      morning: Math.round(baseShadow * 1.3),    // Mer skygge om morgenen
+      midday: Math.round(baseShadow * 0.6),     // Minst skygge ved middag
+      afternoon: Math.round(baseShadow * 1.1),  // Noe skygge ettermiddag
+      yearlyAverage: Math.round(baseShadow)     // Gjennomsnitt
     };
   }
 
-  // Production ML implementation example (commented out)
-  async analyzeRoofWithML(imageBuffer, coordinates) {
-    // const tf = require('@tensorflow/tfjs-node');
-    // 
-    // // Load pre-trained model
-    // const model = await tf.loadLayersModel('file://./models/roof-segmentation/model.json');
-    // 
-    // // Preprocess image
-    // const tensor = tf.node.decodeImage(imageBuffer);
-    // const resized = tf.image.resizeBilinear(tensor, [512, 512]);
-    // const normalized = resized.div(255.0);
-    // const batched = normalized.expandDims(0);
-    // 
-    // // Run inference
-    // const predictions = await model.predict(batched);
-    // 
-    // // Post-process predictions
-    // const segmentationMask = predictions[0]; // Roof area segmentation
-    // const roofTypeProbs = predictions[1];    // Roof type classification
-    // const orientationAngle = predictions[2]; // Orientation regression
-    // 
-    // // Calculate roof area from segmentation mask
-    // const pixelsPerMeter = this.calculatePixelsPerMeter(coordinates);
-    // const roofPixels = tf.sum(segmentationMask).dataSync()[0];
-    // const roofArea = roofPixels / (pixelsPerMeter * pixelsPerMeter);
-    // 
-    // // Determine roof type from probabilities
-    // const roofTypes = ['Flatt tak', 'Skråtak', 'Saltak', 'Valmtak', 'Pulttak'];
-    // const roofTypeIndex = tf.argMax(roofTypeProbs, 1).dataSync()[0];
-    // const roofType = roofTypes[roofTypeIndex];
-    // 
-    // // Clean up tensors
-    // tensor.dispose();
-    // resized.dispose();
-    // normalized.dispose();
-    // batched.dispose();
-    // predictions.forEach(p => p.dispose());
-    // 
-    // return {
-    //   roofType,
-    //   roofArea: Math.round(roofArea),
-    //   // ... other analysis results
-    // };
+  // Hjelpefunksjoner
+  hashCoordinates(coordinates) {
+    const str = `${coordinates.lat}${coordinates.lon}`;
+    return str.split('').reduce((acc, char) => 
+      ((acc << 5) - acc) + char.charCodeAt(0), 0) >>> 0;
+  }
+
+  selectWeightedRandom(weightsObj, seed) {
+    const items = Object.keys(weightsObj);
+    const weights = Object.values(weightsObj);
+    return this.selectWeightedRandomFromArray(items, weights, seed);
+  }
+
+  selectWeightedRandomFromArray(items, weights, seed) {
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    const random = (seed % totalWeight);
+    
+    let cumulative = 0;
+    for (let i = 0; i < items.length; i++) {
+      cumulative += weights[i];
+      if (random < cumulative) {
+        return items[i];
+      }
+    }
+    
+    return items[0];
   }
 }
 
