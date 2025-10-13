@@ -13,6 +13,10 @@ const createRateLimiter = (options = {}) => rateLimit({
     success: false,
     error: 'For mange forespørsler fra denne IP-adressen. Vennligst prøv igjen senere.',
   },
+  // VIKTIG: Disable X-Forwarded-For validation for Render
+  validate: {
+    xForwardedForHeader: false,
+  },
   ...options,
 });
 
