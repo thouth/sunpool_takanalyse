@@ -27,19 +27,31 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      imgSrc: ["'self'", "https://wms.geonorge.no", "https://*.kartverket.no", "data:", "blob:"],
+      imgSrc: ["'self'", "https://wms.geonorge.no", "https://*.kartverket.no", "data:", "blob:", "*"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'", "*"],
     },
   },
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false,
 }));
 
-// CORS configuration
+// CORS configuration - MER LIBERAL for å støtte satellittbilder
 app.use(cors({
-  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000'],
+  origin: function(origin, callback) {
+    // Tillat alle origins (viktig for development og satellittbilder)
+    callback(null, true);
+  },
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'Accept'],
+  exposedHeaders: ['Content-Length', 'Content-Type'],
 }));
+
+// Global OPTIONS handler for preflight requests
+app.options('*', cors());
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -58,7 +70,7 @@ if (process.env.NODE_ENV === 'production') {
 // Rate limiting
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
   message: 'For mange forespørsler fra denne IP-adressen, vennligst prøv igjen senere.',
   standardHeaders: true,
   legacyHeaders: false,
