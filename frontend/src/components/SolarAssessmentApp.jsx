@@ -119,123 +119,126 @@ const SolarAssessmentApp = () => {
     : null;
 
   // Forbedret satellittbilde-håndtering
-  useEffect(() => {
-    const loadSatelliteImage = async () => {
-      const imageEndpoint = assessmentResult?.roofAnalysis?.imageUrl;
+// frontend/src/components/SolarAssessmentApp.jsx
+// Erstatt HELE useEffect-blokken for satellittbilder (linje ~150-250)
 
-      if (!imageEndpoint) {
-        console.log('[Frontend] No image endpoint available');
-        setSatelliteImageUrl(null);
-        setIsSatelliteImageLoading(false);
-        return;
-      }
+useEffect(() => {
+  const loadSatelliteImage = async () => {
+    const imageEndpoint = assessmentResult?.roofAnalysis?.imageUrl;
 
+    if (!imageEndpoint) {
+      console.log('[Frontend] No image endpoint available');
+      setSatelliteImageUrl(null);
+      setIsSatelliteImageLoading(false);
+      return;
+    }
+
+    try {
+      setImageError(false);
+      setIsSatelliteImageLoading(true);
+
+      console.log('[Frontend] Image endpoint:', imageEndpoint);
+
+      // Parse URL og legg til format parameter
+      let fetchUrl;
       try {
-        setImageError(false);
-        setIsSatelliteImageLoading(true);
-
-        console.log('[Frontend] Loading satellite image from:', imageEndpoint);
-
-        let imageUrl;
-        try {
-          imageUrl = new URL(imageEndpoint);
-        } catch (error) {
-          imageUrl = new URL(imageEndpoint, window.location.origin);
-        }
-
-        // Legg til format parameter for å få data-URL
-        imageUrl.searchParams.set('format', 'data-url');
-
-        console.log('[Frontend] Fetching from proxy:', imageUrl.toString());
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 65000); // 65 sekunder
-
-        try {
-          const response = await fetch(imageUrl.toString(), {
-            headers: getDefaultHeaders(),
-            signal: controller.signal,
-          });
-
-          clearTimeout(timeoutId);
-
-          console.log('[Frontend] Response status:', response.status);
-          console.log('[Frontend] Response headers:', Object.fromEntries(response.headers.entries()));
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            console.error('[Frontend] API error response:', errorData);
-            
-            // Hvis WMS er nede, vis feilmelding men ikke krasj
-            if (response.status === 503) {
-              console.warn('[Frontend] WMS service temporarily unavailable');
-              setImageError(true);
-              setSatelliteImageUrl(null);
-              return;
-            }
-            
-            throw new Error(errorData?.error || `HTTP ${response.status}`);
-          }
-
-          const payload = await response.json();
-          console.log('[Frontend] Payload structure:', {
-            hasSuccess: 'success' in payload,
-            success: payload?.success,
-            hasData: !!payload?.data,
-            hasDataUrl: !!payload?.data?.dataUrl,
-            cached: payload?.data?.cached,
-            dataKeys: payload?.data ? Object.keys(payload.data) : [],
-          });
-
-          // Prøv å finne dataUrl i ulike strukturer
-          const dataUrl = payload?.data?.dataUrl || payload?.dataUrl;
-
-          if (!dataUrl) {
-            console.error('[Frontend] No dataUrl in response. Full payload:', payload);
-            throw new Error('Manglende dataUrl i svar fra API');
-          }
-
-          // Valider data URL format
-          if (!dataUrl.startsWith('data:image/')) {
-            console.error('[Frontend] Invalid data URL format. Starts with:', dataUrl.substring(0, 50));
-            throw new Error('Ugyldig bildedataformat');
-          }
-
-          console.log('[Frontend] Successfully loaded satellite image');
-          console.log('[Frontend] Image size:', dataUrl.length, 'bytes');
-          console.log('[Frontend] Image type:', dataUrl.substring(5, dataUrl.indexOf(';')));
-          
-          setSatelliteImageUrl(dataUrl);
-          setImageError(false);
-
-        } catch (fetchError) {
-          clearTimeout(timeoutId);
-          
-          if (fetchError.name === 'AbortError') {
-            console.error('[Frontend] Request timed out after 65 seconds');
-            throw new Error('Forespørselen tok for lang tid');
-          }
-          
-          throw fetchError;
-        }
-
+        fetchUrl = new URL(imageEndpoint);
       } catch (error) {
-        console.error('[Frontend] Failed to load satellite image:', error);
-        console.error('[Frontend] Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack,
-        });
-        
-        setSatelliteImageUrl(null);
-        setImageError(true);
-      } finally {
-        setIsSatelliteImageLoading(false);
+        fetchUrl = new URL(imageEndpoint, window.location.origin);
       }
-    };
 
+      // VIKTIG: Legg til format parameter
+      fetchUrl.searchParams.set('format', 'data-url');
+
+      const finalUrl = fetchUrl.toString();
+      console.log('[Frontend] Final fetch URL:', finalUrl);
+
+      // ENKLERE fetch uten timeout/abort - la nettleseren håndtere det
+      const response = await fetch(finalUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        mode: 'cors',
+        cache: 'default',
+      });
+
+      console.log('[Frontend] Response received');
+      console.log('[Frontend] Response status:', response.status);
+      console.log('[Frontend] Response ok:', response.ok);
+      console.log('[Frontend] Response headers:', {
+        contentType: response.headers.get('content-type'),
+        contentLength: response.headers.get('content-length'),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Frontend] Response not OK:', errorText);
+        
+        // Hvis 503, vis fallback
+        if (response.status === 503) {
+          setImageError(true);
+          setSatelliteImageUrl(null);
+          return;
+        }
+        
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      // Parse JSON response
+      const payload = await response.json();
+      console.log('[Frontend] Payload received:', {
+        success: payload?.success,
+        hasData: !!payload?.data,
+        hasDataUrl: !!payload?.data?.dataUrl,
+        cached: payload?.data?.cached,
+      });
+
+      if (!payload.success) {
+        console.error('[Frontend] API returned success=false:', payload);
+        throw new Error(payload.error || 'API returned unsuccessful response');
+      }
+
+      const dataUrl = payload?.data?.dataUrl;
+
+      if (!dataUrl) {
+        console.error('[Frontend] No dataUrl in payload:', payload);
+        throw new Error('Manglende dataUrl i API-respons');
+      }
+
+      // Valider data URL format
+      if (!dataUrl.startsWith('data:image/')) {
+        console.error('[Frontend] Invalid dataUrl format:', dataUrl.substring(0, 50));
+        throw new Error('Ugyldig bildedataformat');
+      }
+
+      console.log('[Frontend] ✅ Successfully loaded satellite image');
+      console.log('[Frontend] Image size:', dataUrl.length, 'characters');
+      console.log('[Frontend] Image type:', dataUrl.substring(5, dataUrl.indexOf(';')));
+      console.log('[Frontend] Cached:', payload?.data?.cached);
+      
+      setSatelliteImageUrl(dataUrl);
+      setImageError(false);
+
+    } catch (error) {
+      console.error('[Frontend] ❌ Failed to load satellite image');
+      console.error('[Frontend] Error name:', error.name);
+      console.error('[Frontend] Error message:', error.message);
+      console.error('[Frontend] Error stack:', error.stack);
+      
+      setSatelliteImageUrl(null);
+      setImageError(true);
+    } finally {
+      setIsSatelliteImageLoading(false);
+    }
+  };
+
+  // Kjør loading
+  if (assessmentResult?.roofAnalysis?.imageUrl) {
     loadSatelliteImage();
-  }, [assessmentResult?.roofAnalysis?.imageUrl]);
+  }
+}, [assessmentResult?.roofAnalysis?.imageUrl]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-yellow-50 p-4">
