@@ -130,10 +130,10 @@ router.get('/satellite-image/debug', async (req, res) => {
 
   const bboxSize = 0.003;
   const bbox = [
-    parseFloat(lon) - bboxSize,
     parseFloat(lat) - bboxSize,
-    parseFloat(lon) + bboxSize,
+    parseFloat(lon) - bboxSize,
     parseFloat(lat) + bboxSize,
+    parseFloat(lon) + bboxSize,
   ].join(',');
 
   const wmsUrl = 'https://wms.geonorge.no/skwms1/wms.nib';
@@ -227,12 +227,30 @@ router.get('/satellite-image/debug', async (req, res) => {
 });
 
 /**
- * Satellite Image Proxy med retry-logikk og fallback
+ * OPTIONS handler for preflight
  */
-// Erstatt hele /api/satellite-image endepunktet i backend/src/routes/api.js
-// Start fra linje ~180 (etter /assessment routes)
+router.options('/satellite-image', (req, res) => {
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, x-api-key, Authorization, Accept',
+    'Access-Control-Max-Age': '86400',
+  });
+  res.status(200).end();
+});
 
+/**
+ * Satellite Image Proxy med CORS og retry
+ */
 router.get('/satellite-image', async (req, res) => {
+  // Sett CORS headers FØRST
+  res.set({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, x-api-key, Authorization, Accept',
+    'Access-Control-Max-Age': '86400',
+  });
+
   try {
     const { lat, lon, width = 800, height = 800 } = req.query;
 
@@ -255,7 +273,7 @@ router.get('/satellite-image', async (req, res) => {
       });
     }
 
-    // Sjekk cache først
+    // Sjekk cache
     const cacheKey = `satellite_${lat}_${lon}_${width}_${height}`;
     const cached = imageCache.get(cacheKey);
     
@@ -276,16 +294,13 @@ router.get('/satellite-image', async (req, res) => {
 
     console.log('[Satellite] Cache MISS:', cacheKey);
 
-    // Bygg WMS URL med riktig BBOX format for EPSG:4326
+    // BBOX for EPSG:4326 (lat,lon rekkefølge)
     const bboxSize = 0.003;
-    
-    // VIKTIG: EPSG:4326 bruker lat,lon rekkefølge (nord,øst)
-    // Format: minLat,minLon,maxLat,maxLon
     const bbox = [
-      latitude - bboxSize,   // minLat (sør)
-      longitude - bboxSize,  // minLon (vest)
-      latitude + bboxSize,   // maxLat (nord)
-      longitude + bboxSize,  // maxLon (øst)
+      latitude - bboxSize,
+      longitude - bboxSize,
+      latitude + bboxSize,
+      longitude + bboxSize,
     ].join(',');
 
     const wmsBaseUrl = 'https://wms.geonorge.no/skwms1/wms.nib';
@@ -328,51 +343,40 @@ router.get('/satellite-image', async (req, res) => {
         });
 
         const contentType = response.headers['content-type'] || '';
-        const contentLength = response.headers['content-length'] || 0;
         
         console.log('[Satellite] Response status:', response.status);
         console.log('[Satellite] Content-Type:', contentType);
-        console.log('[Satellite] Content-Length:', contentLength);
 
-        // Sjekk for XML feilmeldinger fra WMS
+        // Sjekk for XML-feil
         if (contentType.includes('xml') || contentType.includes('text')) {
           const errorText = Buffer.from(response.data).toString('utf8');
-          console.error('[Satellite] WMS returned XML/text error:');
-          console.error(errorText.substring(0, 500));
-          
-          // Parse WMS error hvis mulig
-          const errorMatch = errorText.match(/<ServiceException[^>]*>(.*?)<\/ServiceException>/i);
-          const wmsError = errorMatch ? errorMatch[1] : 'WMS service error';
-          
-          throw new Error(`WMS Error: ${wmsError}`);
+          console.error('[Satellite] WMS error:', errorText.substring(0, 300));
+          throw new Error('WMS returned XML error');
         }
 
-        // Sjekk at vi faktisk fikk et bilde
+        // Sjekk bildeformat
         if (!contentType.startsWith('image/')) {
           console.error('[Satellite] Invalid content-type:', contentType);
-          const preview = Buffer.from(response.data).toString('utf8', 0, 200);
-          console.error('[Satellite] Response preview:', preview);
           throw new Error(`Expected image, got: ${contentType}`);
         }
 
         const imageBuffer = Buffer.from(response.data);
         
-        // Valider at buffer ikke er tom
         if (imageBuffer.length === 0) {
-          throw new Error('Received empty image buffer');
+          throw new Error('Empty image buffer');
         }
 
-        console.log(`[Satellite] SUCCESS on attempt ${attempt}!`);
-        console.log(`[Satellite] Image size: ${imageBuffer.length} bytes`);
+        console.log(`[Satellite] SUCCESS! Size: ${imageBuffer.length} bytes`);
 
-        // Konverter til base64 data URL
+        // Konverter til base64
         const base64 = imageBuffer.toString('base64');
         const dataUrl = `data:${contentType};base64,${base64}`;
 
-        // Cache resultatet
+        // Cache
         imageCache.set(cacheKey, { dataUrl, contentType, bbox });
-        console.log('[Satellite] Cached with key:', cacheKey);
+        console.log('[Satellite] Cached:', cacheKey);
 
+        // Send response
         return res.json({
           success: true,
           data: {
@@ -388,19 +392,10 @@ router.get('/satellite-image', async (req, res) => {
 
       } catch (error) {
         lastError = error;
-        console.warn(`[Satellite] Attempt ${attempt}/${maxRetries} FAILED:`, error.message);
+        console.warn(`[Satellite] Attempt ${attempt}/${maxRetries} failed:`, error.message);
         
-        if (error.response) {
-          console.warn('[Satellite] Error response status:', error.response.status);
-          console.warn('[Satellite] Error response headers:', error.response.headers);
-        }
+        if (attempt === maxRetries) break;
         
-        // Hvis siste forsøk, ikke retry
-        if (attempt === maxRetries) {
-          break;
-        }
-        
-        // Exponential backoff
         const waitTime = 1000 * Math.pow(2, attempt - 1);
         console.log(`[Satellite] Waiting ${waitTime}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -408,14 +403,13 @@ router.get('/satellite-image', async (req, res) => {
     }
 
     // Alle forsøk feilet
-    console.error('[Satellite] All attempts exhausted. Last error:', lastError.message);
+    console.error('[Satellite] All attempts failed:', lastError.message);
     
     return res.status(503).json({
       success: false,
       error: 'Kunne ikke hente satellittbilde fra Norge i bilder',
       details: lastError.message,
-      wmsUrl: imageUrl,
-      suggestion: 'WMS-tjenesten kan være midlertidig utilgjengelig eller koordinatene er utenfor dekningsområdet.',
+      suggestion: 'WMS-tjenesten kan være midlertidig utilgjengelig.',
       fallbackUrl: `https://norgeskart.no/#!?project=norgeskart&layers=1002&zoom=17&lat=${latitude}&lon=${longitude}`,
     });
 
@@ -424,7 +418,7 @@ router.get('/satellite-image', async (req, res) => {
     
     res.status(500).json({
       success: false,
-      error: 'En uventet feil oppstod ved henting av satellittbilde',
+      error: 'En uventet feil oppstod',
       details: error.message,
     });
   }
