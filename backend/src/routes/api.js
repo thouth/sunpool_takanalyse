@@ -123,8 +123,111 @@ router.get(
 router.get('/assessment', assessmentController.listAssessments);
 
 /**
- * Satellite Image Proxy med forbedret feilhåndtering og retry-logikk
- * Henter ortofoto fra Norge i bilder via WMS
+ * DEBUG ENDPOINT - Test WMS direkte
+ */
+router.get('/satellite-image/debug', async (req, res) => {
+  const { lat = 58.8960, lon = 5.6868 } = req.query;
+
+  const bboxSize = 0.003;
+  const bbox = [
+    parseFloat(lon) - bboxSize,
+    parseFloat(lat) - bboxSize,
+    parseFloat(lon) + bboxSize,
+    parseFloat(lat) + bboxSize,
+  ].join(',');
+
+  const wmsUrl = 'https://wms.geonorge.no/skwms1/wms.nib';
+  const params = new URLSearchParams({
+    SERVICE: 'WMS',
+    VERSION: '1.3.0',
+    REQUEST: 'GetMap',
+    LAYERS: 'ortofoto',
+    STYLES: '',
+    FORMAT: 'image/jpeg',
+    TRANSPARENT: 'FALSE',
+    CRS: 'EPSG:4326',
+    BBOX: bbox,
+    WIDTH: '800',
+    HEIGHT: '800',
+  });
+
+  const fullUrl = `${wmsUrl}?${params.toString()}`;
+
+  console.log('=== WMS DEBUG ===');
+  console.log('URL:', fullUrl);
+  console.log('Coordinates:', { lat, lon });
+  console.log('BBOX:', bbox);
+
+  try {
+    const response = await axios.get(fullUrl, {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+      validateStatus: () => true,
+    });
+
+    const contentType = response.headers['content-type'];
+    const contentLength = response.headers['content-length'];
+
+    console.log('Response Status:', response.status);
+    console.log('Content-Type:', contentType);
+    console.log('Content-Length:', contentLength);
+    console.log('Headers:', response.headers);
+
+    if (contentType && contentType.includes('xml')) {
+      const errorText = Buffer.from(response.data).toString('utf8');
+      console.log('WMS Error Response:', errorText);
+      
+      return res.json({
+        success: false,
+        error: 'WMS returned XML error',
+        details: errorText,
+        url: fullUrl,
+        contentType,
+      });
+    }
+
+    if (contentType && contentType.startsWith('image/')) {
+      const buffer = Buffer.from(response.data);
+      const base64 = buffer.toString('base64');
+      const dataUrl = `data:${contentType};base64,${base64}`;
+
+      return res.json({
+        success: true,
+        message: 'Image retrieved successfully!',
+        url: fullUrl,
+        contentType,
+        size: buffer.length,
+        dataUrlPreview: dataUrl.substring(0, 100) + '...',
+        bbox,
+        fullDataUrl: dataUrl,
+      });
+    }
+
+    const preview = Buffer.from(response.data).toString('utf8', 0, 500);
+    return res.json({
+      success: false,
+      error: 'Unexpected content type',
+      contentType,
+      preview,
+      url: fullUrl,
+    });
+
+  } catch (error) {
+    console.error('WMS Request Failed:', error.message);
+    
+    return res.json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      url: fullUrl,
+      responseStatus: error.response?.status,
+      responseHeaders: error.response?.headers,
+    });
+  }
+});
+
+/**
+ * Satellite Image Proxy med retry-logikk og fallback
  */
 router.get('/satellite-image', async (req, res) => {
   try {
@@ -149,7 +252,6 @@ router.get('/satellite-image', async (req, res) => {
       });
     }
 
-    // Sjekk cache først
     const cacheKey = `satellite_${lat}_${lon}_${width}_${height}`;
     const cached = imageCache.get(cacheKey);
     
@@ -168,7 +270,6 @@ router.get('/satellite-image', async (req, res) => {
       });
     }
 
-    // Større bbox for bedre oversikt (ca 400m x 400m)
     const bboxSize = 0.003;
     const bbox = [
       longitude - bboxSize,
@@ -177,7 +278,6 @@ router.get('/satellite-image', async (req, res) => {
       latitude + bboxSize,
     ].join(',');
 
-    // WMS endepunkt
     const wmsBaseUrl = 'https://wms.geonorge.no/skwms1/wms.nib';
     
     const wmsParams = new URLSearchParams({
@@ -198,7 +298,6 @@ router.get('/satellite-image', async (req, res) => {
 
     console.log(`[Satellite] Fetching from WMS: ${imageUrl}`);
 
-    // Retry-logikk med exponential backoff
     let lastError;
     const maxRetries = 3;
     
@@ -208,7 +307,7 @@ router.get('/satellite-image', async (req, res) => {
         
         const response = await axios.get(imageUrl, {
           responseType: 'arraybuffer',
-          timeout: 60000, // 60 sekunder timeout
+          timeout: 60000,
           maxRedirects: 5,
           headers: {
             'User-Agent': 'Solar-Assessment-App/1.0',
@@ -217,37 +316,24 @@ router.get('/satellite-image', async (req, res) => {
           validateStatus: (status) => status < 500,
         });
 
-        // Sjekk at vi faktisk fikk et bilde
         const contentType = response.headers['content-type'];
         
         if (!contentType || !contentType.startsWith('image/')) {
-          console.error('[Satellite] Invalid content type received:', contentType);
-          console.error('[Satellite] Response status:', response.status);
-          
+          console.error('[Satellite] Invalid content type:', contentType);
           const textPreview = Buffer.from(response.data).toString('utf8', 0, 200);
           console.error('[Satellite] Response preview:', textPreview);
-          
           throw new Error(`WMS returned non-image content-type: ${contentType}`);
         }
 
         const imageBuffer = Buffer.from(response.data);
+        console.log(`[Satellite] Success on attempt ${attempt}! Size: ${imageBuffer.length} bytes`);
 
-        console.log(`[Satellite] Success on attempt ${attempt}! Size: ${imageBuffer.length} bytes, type: ${contentType}`);
-
-        // Konverter til data URL
         const base64 = imageBuffer.toString('base64');
         const dataUrl = `data:${contentType};base64,${base64}`;
 
-        // Cache resultatet
-        imageCache.set(cacheKey, {
-          dataUrl,
-          contentType,
-          bbox,
-        });
-
+        imageCache.set(cacheKey, { dataUrl, contentType, bbox });
         console.log(`[Satellite] Image cached with key: ${cacheKey}`);
 
-        // Send til frontend
         return res.json({
           success: true,
           data: {
@@ -267,19 +353,16 @@ router.get('/satellite-image', async (req, res) => {
         
         if (error.response) {
           console.warn('[Satellite] Response status:', error.response.status);
-          console.warn('[Satellite] Response headers:', error.response.headers);
         }
         
-        // Hvis det ikke er siste forsøk, vent før retry (exponential backoff)
         if (attempt < maxRetries) {
-          const waitTime = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+          const waitTime = 1000 * Math.pow(2, attempt - 1);
           console.log(`[Satellite] Waiting ${waitTime}ms before retry...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
     }
 
-    // Alle forsøk feilet
     console.error('[Satellite] All retry attempts exhausted. Last error:', lastError.message);
     
     return res.status(503).json({
@@ -290,10 +373,11 @@ router.get('/satellite-image', async (req, res) => {
         : lastError.message,
       suggestion: 'WMS-tjenesten kan være midlertidig utilgjengelig. Prøv igjen om et øyeblikk.',
       attempts: maxRetries,
+      fallbackUrl: `https://norgeskart.no/#!?project=norgeskart&layers=1002&zoom=17&lat=${latitude}&lon=${longitude}`,
     });
 
   } catch (error) {
-    console.error('[Satellite] Unexpected error in satellite-image endpoint:', error);
+    console.error('[Satellite] Unexpected error:', error);
     
     res.status(500).json({
       success: false,
@@ -304,7 +388,7 @@ router.get('/satellite-image', async (req, res) => {
 });
 
 /**
- * Cache management endpoints (valgfritt - for debugging/admin)
+ * Cache management endpoints
  */
 router.get('/satellite-image/cache/stats', (req, res) => {
   const stats = imageCache.getStats();
