@@ -8,120 +8,136 @@ const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 const path = require('path');
 
-// Load environment variables
 dotenv.config();
 
-// Import routes
 const apiRoutes = require('./routes/api');
 const healthRoutes = require('./routes/health');
-
-// Import middleware
 const errorHandler = require('./middleware/errorHandler');
-const validateRequest = require('./middleware/validateRequest');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// VIKTIG: Trust proxy for Render deployment
-// Dette fikser rate limiting bak reverse proxy
-app.set('trust proxy', 1);
+// VIKTIG: Trust proxy for Render/production
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 
-// Security middleware
+// Security - mer liberal for å unngå blokkering
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      imgSrc: ["'self'", "https://wms.geonorge.no", "https://*.kartverket.no", "data:", "blob:", "*"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      connectSrc: ["'self'", "*"],
-    },
-  },
+  contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
 }));
 
-// CORS configuration - Liberal for å støtte satellittbilder
-app.use(cors({
+// CORS - VELDIG liberal konfigurasjon
+const corsOptions = {
   origin: function(origin, callback) {
-    // Tillat alle origins
+    // Tillat alle origins (både med og uten origin header)
     callback(null, true);
   },
   credentials: true,
   optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'Accept'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Length', 'Content-Type'],
-}));
+  maxAge: 86400,
+};
 
-// Global OPTIONS handler for preflight requests
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
-// Body parsing middleware
+// Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Compression middleware
+// Compression
 app.use(compression());
 
-// Logging middleware
+// Logging
 if (process.env.NODE_ENV === 'production') {
   app.use(morgan('combined'));
 } else {
   app.use(morgan('dev'));
 }
 
-// Rate limiting - Oppdatert for å fungere bak proxy
+// Rate limiting - MER LIBERAL
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-  message: 'For mange forespørsler fra denne IP-adressen, vennligst prøv igjen senere.',
+  windowMs: 15 * 60 * 1000,
+  max: 200, // Økt fra 100
+  message: 'For mange forespørsler, vennligst prøv igjen senere.',
   standardHeaders: true,
   legacyHeaders: false,
-  // VIKTIG: Tillat X-Forwarded-For header fra Render proxy
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  },
+  // VIKTIG for Render
   validate: {
     xForwardedForHeader: false,
+    trustProxy: false,
   },
 });
 
 app.use('/api', limiter);
 
-// Static files (if serving frontend from same server)
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../../frontend/build')));
-}
-
-// Health check route
+// Health check (før andre routes)
 app.use('/health', healthRoutes);
 
 // API routes
 app.use('/api', apiRoutes);
 
-// Serve frontend in production
+// Static files i produksjon
 if (process.env.NODE_ENV === 'production') {
+  const buildPath = path.join(__dirname, '../../frontend/build');
+  app.use(express.static(buildPath));
+  
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../../frontend/build', 'index.html'));
+    res.sendFile(path.join(buildPath, 'index.html'));
   });
 }
 
-// Error handling middleware (must be last)
+// Error handler (sist)
 app.use(errorHandler);
 
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Route not found',
+    path: req.path,
+  });
+});
+
 // Start server
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV}`);
-  console.log(`🔗 API URL: http://localhost:${PORT}/api`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🛡️  Trust proxy: ${app.get('trust proxy')}`);
+  console.log(`🔗 API URL: http://localhost:${PORT}/api`);
+  console.log('='.repeat(50));
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
+const gracefulShutdown = (signal) => {
+  console.log(`\n${signal} received: closing server gracefully`);
   server.close(() => {
-    console.log('HTTP server closed');
+    console.log('Server closed');
     process.exit(0);
   });
+  
+  setTimeout(() => {
+    console.error('Forcing shutdown');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Unhandled rejection handler
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Promise Rejection:', err);
 });
 
 module.exports = app;
