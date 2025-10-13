@@ -48,20 +48,16 @@ class KartverketService {
     }
   }
 
-  getSatelliteImageUrl(coordinates) {
-    // Hvis mock URL er satt i miljøvariabler, bruk den
-    if (this.useMock && process.env.MOCK_SATELLITE_IMAGE_URL) {
-      console.log('[KartverketService] Using mock satellite image URL');
-      return process.env.MOCK_SATELLITE_IMAGE_URL;
-    }
-
-    // Bruk backend proxy for å omgå CORS
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3001/api';
-    const proxyUrl = `${apiBaseUrl}/satellite-image?lat=${coordinates.lat}&lon=${coordinates.lon}&width=800&height=800`;
-    
-    console.log('[KartverketService] Generated satellite image proxy URL:', proxyUrl);
-    return proxyUrl;
+getSatelliteImageUrl(coordinates) {
+  // Hvis mock URL er satt, bruk den
+  if (process.env.MOCK_SATELLITE_IMAGE_URL) {
+    console.log('[KartverketService] Using MOCK satellite image');
+    return process.env.MOCK_SATELLITE_IMAGE_URL;
   }
+  
+  const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3001/api';
+  return `${apiBaseUrl}/satellite-image?lat=${coordinates.lat}&lon=${coordinates.lon}&width=800&height=800`;
+}
 
   async getElevation(coordinates) {
     try {
