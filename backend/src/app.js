@@ -22,6 +22,10 @@ const validateRequest = require('./middleware/validateRequest');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// VIKTIG: Trust proxy for Render deployment
+// Dette fikser rate limiting bak reverse proxy
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -37,10 +41,10 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
-// CORS configuration - MER LIBERAL for å støtte satellittbilder
+// CORS configuration - Liberal for å støtte satellittbilder
 app.use(cors({
   origin: function(origin, callback) {
-    // Tillat alle origins (viktig for development og satellittbilder)
+    // Tillat alle origins
     callback(null, true);
   },
   credentials: true,
@@ -67,13 +71,17 @@ if (process.env.NODE_ENV === 'production') {
   app.use(morgan('dev'));
 }
 
-// Rate limiting
+// Rate limiting - Oppdatert for å fungere bak proxy
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
   message: 'For mange forespørsler fra denne IP-adressen, vennligst prøv igjen senere.',
   standardHeaders: true,
   legacyHeaders: false,
+  // VIKTIG: Tillat X-Forwarded-For header fra Render proxy
+  validate: {
+    xForwardedForHeader: false,
+  },
 });
 
 app.use('/api', limiter);
@@ -104,6 +112,7 @@ const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔗 API URL: http://localhost:${PORT}/api`);
+  console.log(`🛡️  Trust proxy: ${app.get('trust proxy')}`);
 });
 
 // Graceful shutdown
