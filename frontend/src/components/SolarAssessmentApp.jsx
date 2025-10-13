@@ -99,7 +99,6 @@ const SolarAssessmentApp = () => {
   // Generer riktig Norgeskart URL
   const getNorgeskartUrl = (coords) => {
     if (!coords) return '#';
-    // Format: lat,lon som EPSG:4326 koordinater
     return `https://norgeskart.no/#!?project=norgeskart&layers=1002&zoom=17&lat=${coords.lat.toFixed(6)}&lon=${coords.lon.toFixed(6)}&markerLat=${coords.lat.toFixed(6)}&markerLon=${coords.lon.toFixed(6)}&panel=searchOptionsPanel`;
   };
 
@@ -119,11 +118,13 @@ const SolarAssessmentApp = () => {
     ? new Date(weather.updatedAt).toLocaleString('no-NO')
     : null;
 
+  // Forbedret satellittbilde-håndtering
   useEffect(() => {
     const loadSatelliteImage = async () => {
       const imageEndpoint = assessmentResult?.roofAnalysis?.imageUrl;
 
       if (!imageEndpoint) {
+        console.log('[Frontend] No image endpoint available');
         setSatelliteImageUrl(null);
         setIsSatelliteImageLoading(false);
         return;
@@ -133,34 +134,99 @@ const SolarAssessmentApp = () => {
         setImageError(false);
         setIsSatelliteImageLoading(true);
 
-        let imageUrl;
+        console.log('[Frontend] Loading satellite image from:', imageEndpoint);
 
+        let imageUrl;
         try {
           imageUrl = new URL(imageEndpoint);
         } catch (error) {
           imageUrl = new URL(imageEndpoint, window.location.origin);
         }
 
+        // Legg til format parameter for å få data-URL
         imageUrl.searchParams.set('format', 'data-url');
 
-        const response = await fetch(imageUrl.toString(), {
-          headers: getDefaultHeaders(),
-        });
+        console.log('[Frontend] Fetching from proxy:', imageUrl.toString());
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 65000); // 65 sekunder
+
+        try {
+          const response = await fetch(imageUrl.toString(), {
+            headers: getDefaultHeaders(),
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          console.log('[Frontend] Response status:', response.status);
+          console.log('[Frontend] Response headers:', Object.fromEntries(response.headers.entries()));
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error('[Frontend] API error response:', errorData);
+            
+            // Hvis WMS er nede, vis feilmelding men ikke krasj
+            if (response.status === 503) {
+              console.warn('[Frontend] WMS service temporarily unavailable');
+              setImageError(true);
+              setSatelliteImageUrl(null);
+              return;
+            }
+            
+            throw new Error(errorData?.error || `HTTP ${response.status}`);
+          }
+
+          const payload = await response.json();
+          console.log('[Frontend] Payload structure:', {
+            hasSuccess: 'success' in payload,
+            success: payload?.success,
+            hasData: !!payload?.data,
+            hasDataUrl: !!payload?.data?.dataUrl,
+            cached: payload?.data?.cached,
+            dataKeys: payload?.data ? Object.keys(payload.data) : [],
+          });
+
+          // Prøv å finne dataUrl i ulike strukturer
+          const dataUrl = payload?.data?.dataUrl || payload?.dataUrl;
+
+          if (!dataUrl) {
+            console.error('[Frontend] No dataUrl in response. Full payload:', payload);
+            throw new Error('Manglende dataUrl i svar fra API');
+          }
+
+          // Valider data URL format
+          if (!dataUrl.startsWith('data:image/')) {
+            console.error('[Frontend] Invalid data URL format. Starts with:', dataUrl.substring(0, 50));
+            throw new Error('Ugyldig bildedataformat');
+          }
+
+          console.log('[Frontend] Successfully loaded satellite image');
+          console.log('[Frontend] Image size:', dataUrl.length, 'bytes');
+          console.log('[Frontend] Image type:', dataUrl.substring(5, dataUrl.indexOf(';')));
+          
+          setSatelliteImageUrl(dataUrl);
+          setImageError(false);
+
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          
+          if (fetchError.name === 'AbortError') {
+            console.error('[Frontend] Request timed out after 65 seconds');
+            throw new Error('Forespørselen tok for lang tid');
+          }
+          
+          throw fetchError;
         }
 
-        const payload = await response.json();
-        const dataUrl = payload?.data?.dataUrl || payload?.dataUrl;
-
-        if (!dataUrl) {
-          throw new Error('Manglende dataUrl i svar fra API');
-        }
-
-        setSatelliteImageUrl(dataUrl);
       } catch (error) {
-        console.error('Kunne ikke laste satellittbildet via proxy:', error);
+        console.error('[Frontend] Failed to load satellite image:', error);
+        console.error('[Frontend] Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        });
+        
         setSatelliteImageUrl(null);
         setImageError(true);
       } finally {
@@ -525,34 +591,4 @@ const SolarAssessmentApp = () => {
 
                 <div className="bg-white rounded-lg p-4">
                   <h4 className="font-semibold text-gray-700 mb-2">Tilbakebetalingstid</h4>
-                  <p className="text-2xl font-bold text-orange-600 flex items-center justify-center">
-                    <Clock className="w-6 h-6 mr-2" />
-                    {formatYears(paybackPeriod)}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Med Enova-støtte (35%)</p>
-                </div>
-              </div>
-
-              {assessmentResult.recommendations?.weatherInsights?.length > 0 && (
-                <div className="mt-4 bg-white rounded-lg p-4">
-                  <h4 className="font-semibold text-gray-700 mb-2">Værforhold å merke seg</h4>
-                  <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                    {assessmentResult.recommendations.weatherInsights.map((insight, index) => (
-                      <li key={index}>{insight}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-            
-            <div className="text-center text-sm text-gray-500">
-              <p>Analyse utført: {new Date(assessmentResult.timestamp).toLocaleString('no-NO')}</p>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-export default SolarAssessmentApp;
+                  <p className="text-2xl font-bold text-orange-600 flex items-
