@@ -17,6 +17,7 @@ class KartverketService {
           treffPerSide: 1,
           side: 0,
         },
+        timeout: 10000,
       });
 
       if (response.data.adresser && response.data.adresser.length > 0) {
@@ -40,70 +41,77 @@ class KartverketService {
       }
 
       if (this.shouldMock(error)) {
-        console.warn('KartverketService: Falling back to mock geocoding data', error.message || error.code);
+        console.warn('[KartverketService] Geocoding - falling back to mock:', error.message);
         return this.buildMockCoordinates(address);
       }
 
-      throw new Error('Failed to geocode address against Kartverket');
+      throw new Error('Failed to geocode address');
     }
   }
 
-getSatelliteImageUrl(coordinates) {
-  // Hvis mock URL er satt, bruk den
-  if (process.env.MOCK_SATELLITE_IMAGE_URL) {
-    console.log('[KartverketService] Using MOCK satellite image');
-    return process.env.MOCK_SATELLITE_IMAGE_URL;
-  }
-  
-  const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3001/api';
-  return `${apiBaseUrl}/satellite-image?lat=${coordinates.lat}&lon=${coordinates.lon}&width=800&height=800`;
-}
+  getSatelliteImageUrl(coordinates) {
+    if (this.useMock && process.env.MOCK_SATELLITE_IMAGE_URL) {
+      console.log('[KartverketService] Using mock satellite image URL');
+      return process.env.MOCK_SATELLITE_IMAGE_URL;
+    }
 
-async getElevation(coordinates) {
-  try {
-    const response = await axios.get(`${this.elevationApi}/punkt`, {
-      params: {
-        koordsys: '4326',
-        nord: coordinates.lat,
-        ost: coordinates.lon,
-        geojson: 'false',
-      },
-      timeout: 10000, // 10 sekunder timeout
-    });
-
-    console.log('[Elevation] Response:', response.data);
-
-    // Sikker parsing av elevation
-    const elevation = response.data?.punkt?.z ?? 
-                     response.data?.z ?? 
-                     response.data?.elevation ?? 
-                     0;
-
-    return {
-      elevation: Number(elevation) || 0,
-      datakilder: response.data?.punkt?.datakilde || 'unknown',
-      kilde: 'kartverket',
-    };
-  } catch (error) {
-    console.warn('[Elevation] API error:', error.message);
+    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3001/api';
+    const url = `${apiBaseUrl}/satellite-image?lat=${coordinates.lat}&lon=${coordinates.lon}&width=800&height=800`;
     
-    if (this.shouldMock(error)) {
-      console.warn('[Elevation] Falling back to mock elevation data');
+    console.log('[KartverketService] Generated satellite URL:', url);
+    return url;
+  }
+
+  async getElevation(coordinates) {
+    try {
+      const response = await axios.get(`${this.elevationApi}/punkt`, {
+        params: {
+          koordsys: '4326',
+          nord: coordinates.lat,
+          ost: coordinates.lon,
+          geojson: 'false',
+        },
+        timeout: 10000,
+      });
+
+      // Sikker parsing av elevation
+      let elevation = 0;
+      
+      if (response.data) {
+        if (response.data.punkt && typeof response.data.punkt.z === 'number') {
+          elevation = response.data.punkt.z;
+        } else if (typeof response.data.z === 'number') {
+          elevation = response.data.z;
+        } else if (typeof response.data.elevation === 'number') {
+          elevation = response.data.elevation;
+        }
+      }
+
       return {
-        elevation: this.buildMockElevation(coordinates),
-        datakilder: 'mock',
-        kilde: 'mock',
+        elevation: Math.round(elevation),
+        datakilder: response.data?.punkt?.datakilde || 'kartverket',
+        kilde: 'kartverket',
+      };
+    } catch (error) {
+      console.warn('[KartverketService] Elevation API error:', error.message);
+      
+      if (this.shouldMock(error)) {
+        console.warn('[KartverketService] Elevation - falling back to mock');
+        return {
+          elevation: this.buildMockElevation(coordinates),
+          datakilder: 'mock',
+          kilde: 'mock',
+        };
+      }
+
+      console.error('[KartverketService] Failed to get elevation, using 0');
+      return { 
+        elevation: 0, 
+        datakilder: 'error',
+        kilde: 'error' 
       };
     }
-
-    console.error('[Elevation] Failed to get elevation:', error);
-    return { 
-      elevation: 0, 
-      datakilder: 'error',
-      kilde: 'error' 
-    };
   }
-}
 
   async analyzeLocation(coordinates) {
     const elevation = await this.getElevation(coordinates);
