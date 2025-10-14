@@ -239,8 +239,12 @@ router.options('/satellite-image', (req, res) => {
   res.status(200).end();
 });
 
+// backend/src/routes/api.js
+// Erstatt satellite-image endepunktet (ca. linje 200-400) med denne oppdaterte versjonen:
+
 /**
- * Satellite Image Proxy med CORS og retry
+ * Satellite Image Proxy med forbedret CORS og format-støtte
+ * Støtter både standard JSON-respons og data-url format
  */
 router.get('/satellite-image', async (req, res) => {
   // Sett CORS headers FØRST
@@ -252,7 +256,7 @@ router.get('/satellite-image', async (req, res) => {
   });
 
   try {
-    const { lat, lon, width = 800, height = 800 } = req.query;
+    const { lat, lon, width = 800, height = 800, format } = req.query;
 
     if (!lat || !lon) {
       console.error('[Satellite] Missing coordinates');
@@ -279,28 +283,46 @@ router.get('/satellite-image', async (req, res) => {
     
     if (cached) {
       console.log('[Satellite] Cache HIT:', cacheKey);
-      return res.json({
-        success: true,
-        data: {
-          dataUrl: cached.dataUrl,
-          contentType: cached.contentType,
-          width: Number(width),
-          height: Number(height),
-          bbox: cached.bbox,
-          cached: true,
-        },
-      });
+      
+      // Returner i riktig format basert på query parameter
+      if (format === 'data-url') {
+        return res.json({
+          success: true,
+          data: {
+            dataUrl: cached.dataUrl,
+            contentType: cached.contentType,
+            width: Number(width),
+            height: Number(height),
+            bbox: cached.bbox,
+            cached: true,
+          },
+        });
+      } else {
+        // Standard format for bakoverkompatibilitet
+        return res.json({
+          success: true,
+          imageUrl: cached.dataUrl,
+          data: {
+            dataUrl: cached.dataUrl,
+            contentType: cached.contentType,
+            width: Number(width),
+            height: Number(height),
+            bbox: cached.bbox,
+            cached: true,
+          },
+        });
+      }
     }
 
     console.log('[Satellite] Cache MISS:', cacheKey);
 
-    // BBOX for EPSG:4326 (lat,lon rekkefølge)
+    // WMS-parametere for Norge i bilder
     const bboxSize = 0.003;
     const bbox = [
-      latitude - bboxSize,
-      longitude - bboxSize,
-      latitude + bboxSize,
-      longitude + bboxSize,
+      longitude - bboxSize,  // Vest
+      latitude - bboxSize,   // Sør  
+      longitude + bboxSize,  // Øst
+      latitude + bboxSize,   // Nord
     ].join(',');
 
     const wmsBaseUrl = 'https://wms.geonorge.no/skwms1/wms.nib';
@@ -323,7 +345,7 @@ router.get('/satellite-image', async (req, res) => {
     console.log('[Satellite] WMS URL:', imageUrl);
     console.log('[Satellite] BBOX:', bbox);
 
-    // Retry-logikk
+    // Retry-logikk med forbedret feilhåndtering
     let lastError;
     const maxRetries = 3;
     
@@ -333,7 +355,7 @@ router.get('/satellite-image', async (req, res) => {
         
         const response = await axios.get(imageUrl, {
           responseType: 'arraybuffer',
-          timeout: 60000,
+          timeout: 30000,
           maxRedirects: 5,
           headers: {
             'User-Agent': 'Solar-Assessment-App/1.0',
@@ -347,14 +369,16 @@ router.get('/satellite-image', async (req, res) => {
         console.log('[Satellite] Response status:', response.status);
         console.log('[Satellite] Content-Type:', contentType);
 
-        // Sjekk for XML-feil
+        // Sjekk for WMS-feil (XML response)
         if (contentType.includes('xml') || contentType.includes('text')) {
           const errorText = Buffer.from(response.data).toString('utf8');
           console.error('[Satellite] WMS error:', errorText.substring(0, 300));
-          throw new Error('WMS returned XML error');
+          
+          // Prøv alternativ bilde-tjeneste eller fallback
+          throw new Error('WMS returned XML error - trying fallback');
         }
 
-        // Sjekk bildeformat
+        // Verifiser at vi fikk et bilde
         if (!contentType.startsWith('image/')) {
           console.error('[Satellite] Invalid content-type:', contentType);
           throw new Error(`Expected image, got: ${contentType}`);
@@ -368,27 +392,45 @@ router.get('/satellite-image', async (req, res) => {
 
         console.log(`[Satellite] SUCCESS! Size: ${imageBuffer.length} bytes`);
 
-        // Konverter til base64
+        // Konverter til base64 data URL
         const base64 = imageBuffer.toString('base64');
         const dataUrl = `data:${contentType};base64,${base64}`;
 
-        // Cache
-        imageCache.set(cacheKey, { dataUrl, contentType, bbox });
+        // Cache resultatet
+        const cacheData = { dataUrl, contentType, bbox };
+        imageCache.set(cacheKey, cacheData);
         console.log('[Satellite] Cached:', cacheKey);
 
-        // Send response
-        return res.json({
-          success: true,
-          data: {
-            dataUrl,
-            contentType,
-            width: Number(width),
-            height: Number(height),
-            bbox,
-            attempts: attempt,
-            cached: false,
-          },
-        });
+        // Returner i riktig format
+        if (format === 'data-url') {
+          return res.json({
+            success: true,
+            data: {
+              dataUrl,
+              contentType,
+              width: Number(width),
+              height: Number(height),
+              bbox,
+              attempts: attempt,
+              cached: false,
+            },
+          });
+        } else {
+          // Standard format
+          return res.json({
+            success: true,
+            imageUrl: dataUrl,
+            data: {
+              dataUrl,
+              contentType,
+              width: Number(width),
+              height: Number(height),
+              bbox,
+              attempts: attempt,
+              cached: false,
+            },
+          });
+        }
 
       } catch (error) {
         lastError = error;
@@ -396,29 +438,119 @@ router.get('/satellite-image', async (req, res) => {
         
         if (attempt === maxRetries) break;
         
+        // Eksponensiell backoff
         const waitTime = 1000 * Math.pow(2, attempt - 1);
         console.log(`[Satellite] Waiting ${waitTime}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
 
-    // Alle forsøk feilet
-    console.error('[Satellite] All attempts failed:', lastError.message);
+    // Alle forsøk feilet - prøv fallback
+    console.error('[Satellite] All WMS attempts failed:', lastError.message);
     
-    return res.status(503).json({
-      success: false,
-      error: 'Kunne ikke hente satellittbilde fra Norge i bilder',
-      details: lastError.message,
-      suggestion: 'WMS-tjenesten kan være midlertidig utilgjengelig.',
-      fallbackUrl: `https://norgeskart.no/#!?project=norgeskart&layers=1002&zoom=17&lat=${latitude}&lon=${longitude}`,
-    });
+    // Sjekk om vi har en fallback URL konfigurert
+    if (process.env.MOCK_SATELLITE_IMAGE_URL) {
+      console.log('[Satellite] Using fallback image URL');
+      
+      try {
+        const fallbackResponse = await axios.get(process.env.MOCK_SATELLITE_IMAGE_URL, {
+          responseType: 'arraybuffer',
+          timeout: 10000,
+        });
+        
+        const imageBuffer = Buffer.from(fallbackResponse.data);
+        const contentType = fallbackResponse.headers['content-type'] || 'image/jpeg';
+        const base64 = imageBuffer.toString('base64');
+        const dataUrl = `data:${contentType};base64,${base64}`;
+        
+        if (format === 'data-url') {
+          return res.json({
+            success: true,
+            data: {
+              dataUrl,
+              contentType,
+              width: Number(width),
+              height: Number(height),
+              bbox,
+              fallback: true,
+              cached: false,
+            },
+          });
+        } else {
+          return res.json({
+            success: true,
+            imageUrl: dataUrl,
+            data: {
+              dataUrl,
+              contentType,
+              width: Number(width),
+              height: Number(height),
+              bbox,
+              fallback: true,
+              cached: false,
+            },
+          });
+        }
+      } catch (fallbackError) {
+        console.error('[Satellite] Fallback also failed:', fallbackError.message);
+      }
+    }
+    
+    // Generer placeholder-bilde som siste utvei
+    const placeholderSvg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <rect width="${width}" height="${height}" fill="#e3f2fd"/>
+        <text x="50%" y="45%" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" fill="#1976d2">
+          Satellittbilde utilgjengelig
+        </text>
+        <text x="50%" y="52%" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#1976d2">
+          Koordinater: ${latitude.toFixed(4)}°N, ${longitude.toFixed(4)}°Ø
+        </text>
+        <text x="50%" y="58%" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#64b5f6">
+          WMS-tjenesten er midlertidig nede
+        </text>
+      </svg>
+    `;
+    
+    const svgBuffer = Buffer.from(placeholderSvg);
+    const svgBase64 = svgBuffer.toString('base64');
+    const svgDataUrl = `data:image/svg+xml;base64,${svgBase64}`;
+    
+    if (format === 'data-url') {
+      return res.json({
+        success: true,
+        data: {
+          dataUrl: svgDataUrl,
+          contentType: 'image/svg+xml',
+          width: Number(width),
+          height: Number(height),
+          bbox,
+          placeholder: true,
+          cached: false,
+        },
+      });
+    } else {
+      return res.json({
+        success: true,
+        imageUrl: svgDataUrl,
+        data: {
+          dataUrl: svgDataUrl,
+          contentType: 'image/svg+xml',
+          width: Number(width),
+          height: Number(height),
+          bbox,
+          placeholder: true,
+          cached: false,
+        },
+      });
+    }
 
   } catch (error) {
     console.error('[Satellite] Unexpected error:', error);
     
     res.status(500).json({
       success: false,
-      error: 'En uventet feil oppstod',
+      error: 'En uventet feil oppstod ved henting av satellittbilde',
       details: error.message,
     });
   }
