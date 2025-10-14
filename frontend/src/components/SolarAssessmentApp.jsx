@@ -33,6 +33,7 @@ const SolarAssessmentApp = () => {
   const [imageError, setImageError] = useState(false);
   const [satelliteImageUrl, setSatelliteImageUrl] = useState(null);
   const [isSatelliteImageLoading, setIsSatelliteImageLoading] = useState(false);
+  const [imageSource, setImageSource] = useState(null);
 
   const performAssessment = async () => {
     setIsLoading(true);
@@ -41,6 +42,7 @@ const SolarAssessmentApp = () => {
     setImageError(false);
     setSatelliteImageUrl(null);
     setIsSatelliteImageLoading(false);
+    setImageSource(null);
     
     try {
       setCurrentStep('Starter vurdering...');
@@ -119,126 +121,122 @@ const SolarAssessmentApp = () => {
     : null;
 
   // Forbedret satellittbilde-håndtering
-// frontend/src/components/SolarAssessmentApp.jsx
-// Erstatt HELE useEffect-blokken for satellittbilder (linje ~150-250)
+  useEffect(() => {
+    const loadSatelliteImage = async () => {
+      const imageEndpoint = assessmentResult?.roofAnalysis?.imageUrl;
 
-useEffect(() => {
-  const loadSatelliteImage = async () => {
-    const imageEndpoint = assessmentResult?.roofAnalysis?.imageUrl;
+      if (!imageEndpoint) {
+        console.log('[Frontend] No image endpoint available');
+        setSatelliteImageUrl(null);
+        setIsSatelliteImageLoading(false);
+        return;
+      }
 
-    if (!imageEndpoint) {
-      console.log('[Frontend] No image endpoint available');
-      setSatelliteImageUrl(null);
-      setIsSatelliteImageLoading(false);
-      return;
-    }
-
-    try {
+      // Reset states
       setImageError(false);
       setIsSatelliteImageLoading(true);
-
-      console.log('[Frontend] Image endpoint:', imageEndpoint);
-
-      // Parse URL og legg til format parameter
-      let fetchUrl;
-      try {
-        fetchUrl = new URL(imageEndpoint);
-      } catch (error) {
-        fetchUrl = new URL(imageEndpoint, window.location.origin);
-      }
-
-      // VIKTIG: Legg til format parameter
-      fetchUrl.searchParams.set('format', 'data-url');
-
-      const finalUrl = fetchUrl.toString();
-      console.log('[Frontend] Final fetch URL:', finalUrl);
-
-      // ENKLERE fetch uten timeout/abort - la nettleseren håndtere det
-      const response = await fetch(finalUrl, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        mode: 'cors',
-        cache: 'default',
-      });
-
-      console.log('[Frontend] Response received');
-      console.log('[Frontend] Response status:', response.status);
-      console.log('[Frontend] Response ok:', response.ok);
-      console.log('[Frontend] Response headers:', {
-        contentType: response.headers.get('content-type'),
-        contentLength: response.headers.get('content-length'),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Frontend] Response not OK:', errorText);
-        
-        // Hvis 503, vis fallback
-        if (response.status === 503) {
-          setImageError(true);
-          setSatelliteImageUrl(null);
-          return;
-        }
-        
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      // Parse JSON response
-      const payload = await response.json();
-      console.log('[Frontend] Payload received:', {
-        success: payload?.success,
-        hasData: !!payload?.data,
-        hasDataUrl: !!payload?.data?.dataUrl,
-        cached: payload?.data?.cached,
-      });
-
-      if (!payload.success) {
-        console.error('[Frontend] API returned success=false:', payload);
-        throw new Error(payload.error || 'API returned unsuccessful response');
-      }
-
-      const dataUrl = payload?.data?.dataUrl;
-
-      if (!dataUrl) {
-        console.error('[Frontend] No dataUrl in payload:', payload);
-        throw new Error('Manglende dataUrl i API-respons');
-      }
-
-      // Valider data URL format
-      if (!dataUrl.startsWith('data:image/')) {
-        console.error('[Frontend] Invalid dataUrl format:', dataUrl.substring(0, 50));
-        throw new Error('Ugyldig bildedataformat');
-      }
-
-      console.log('[Frontend] ✅ Successfully loaded satellite image');
-      console.log('[Frontend] Image size:', dataUrl.length, 'characters');
-      console.log('[Frontend] Image type:', dataUrl.substring(5, dataUrl.indexOf(';')));
-      console.log('[Frontend] Cached:', payload?.data?.cached);
-      
-      setSatelliteImageUrl(dataUrl);
-      setImageError(false);
-
-    } catch (error) {
-      console.error('[Frontend] ❌ Failed to load satellite image');
-      console.error('[Frontend] Error name:', error.name);
-      console.error('[Frontend] Error message:', error.message);
-      console.error('[Frontend] Error stack:', error.stack);
-      
       setSatelliteImageUrl(null);
-      setImageError(true);
-    } finally {
-      setIsSatelliteImageLoading(false);
-    }
-  };
+      setImageSource(null);
 
-  // Kjør loading
-  if (assessmentResult?.roofAnalysis?.imageUrl) {
-    loadSatelliteImage();
-  }
-}, [assessmentResult?.roofAnalysis?.imageUrl]);
+      try {
+        console.log('[Frontend] Loading satellite image from:', imageEndpoint);
+
+        // Parse URL og legg til format parameter
+        let fetchUrl;
+        try {
+          fetchUrl = new URL(imageEndpoint);
+        } catch (error) {
+          // Hvis imageEndpoint er relativ, gjør den absolutt
+          fetchUrl = new URL(imageEndpoint, window.location.origin);
+        }
+
+        // Legg til format=data-url parameter
+        fetchUrl.searchParams.set('format', 'data-url');
+
+        const finalUrl = fetchUrl.toString();
+        console.log('[Frontend] Fetching from:', finalUrl);
+
+        // Fetch med timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 sekunder timeout
+
+        try {
+          const response = await fetch(finalUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+            },
+            mode: 'cors',
+            cache: 'default',
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          console.log('[Frontend] Response status:', response.status);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[Frontend] Error response:', errorText);
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const payload = await response.json();
+          console.log('[Frontend] Response received:', {
+            success: payload?.success,
+            hasData: !!payload?.data,
+            source: payload?.data?.source,
+            cached: payload?.data?.cached,
+          });
+
+          if (!payload.success) {
+            throw new Error(payload.error || 'Failed to fetch image');
+          }
+
+          const imageData = payload?.data;
+          if (!imageData || !imageData.dataUrl) {
+            throw new Error('No image data in response');
+          }
+
+          // Valider data URL
+          if (!imageData.dataUrl.startsWith('data:')) {
+            throw new Error('Invalid image data format');
+          }
+
+          // Sett bilde og kilde
+          setSatelliteImageUrl(imageData.dataUrl);
+          setImageSource(imageData.source || 'Unknown');
+          setImageError(false);
+
+          console.log('[Frontend] ✅ Image loaded successfully from:', imageData.source);
+
+        } catch (fetchError) {
+          clearTimeout(timeoutId);
+          
+          if (fetchError.name === 'AbortError') {
+            console.error('[Frontend] Request timed out after 30 seconds');
+          } else {
+            console.error('[Frontend] Fetch error:', fetchError.message);
+          }
+          throw fetchError;
+        }
+
+      } catch (error) {
+        console.error('[Frontend] Failed to load satellite image:', error);
+        setSatelliteImageUrl(null);
+        setImageError(true);
+        setImageSource(null);
+      } finally {
+        setIsSatelliteImageLoading(false);
+      }
+    };
+
+    // Kjør loading hvis vi har en imageUrl
+    if (assessmentResult?.roofAnalysis?.imageUrl) {
+      loadSatelliteImage();
+    }
+  }, [assessmentResult?.roofAnalysis?.imageUrl]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-yellow-50 p-4">
@@ -397,39 +395,65 @@ useEffect(() => {
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
                   <Camera className="w-5 h-5 mr-2 text-blue-500" />
-                  Ortofoto fra Norge i bilder
+                  Kartgrunnlag
+                  {imageSource && imageSource !== 'placeholder' && (
+                    <span className="ml-2 text-sm font-normal text-gray-500">
+                      (Kilde: {imageSource})
+                    </span>
+                  )}
                 </h3>
                 
-                {!imageError ? (
-                  satelliteImageUrl ? (
-                    <div className="mb-4 rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-50">
+                {isSatelliteImageLoading ? (
+                  <div className="bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
+                    <Loader2 className="w-8 h-8 mx-auto text-blue-500 mb-3 animate-spin" />
+                    <p className="text-gray-700 font-medium mb-1">
+                      Henter kartdata...
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Kontakter Kartverket WMS-tjeneste
+                    </p>
+                  </div>
+                ) : satelliteImageUrl ? (
+                  <div className="space-y-4">
+                    <div className="rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-50">
                       <img
                         src={satelliteImageUrl}
-                        alt="Satellittbilde av takflate"
+                        alt="Kartutsnitt av området"
                         className="w-full h-auto"
+                        onError={() => {
+                          console.error('[Frontend] Image failed to render');
+                          setImageError(true);
+                          setSatelliteImageUrl(null);
+                        }}
                       />
                     </div>
-                  ) : (
-                    isSatelliteImageLoading && (
-                      <div className="mb-4 bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
-                        <Loader2 className="w-8 h-8 mx-auto text-blue-500 mb-3 animate-spin" />
-                        <p className="text-gray-700 font-medium mb-1">
-                          Henter satellittbilde...
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          Dette kan ta et øyeblikk ved første innlasting
+                    {imageSource === 'placeholder' && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                        <p className="text-sm text-yellow-800">
+                          ⚠️ WMS-tjenestene er midlertidig utilgjengelige. Viser kartsymbol for lokasjon.
                         </p>
                       </div>
-                    )
-                  )
-                ) : (
-                  <div className="mb-4 bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
+                    )}
+                    <div className="flex justify-center">
+                      <a
+                        href={getNorgeskartUrl(assessmentResult.coordinates)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                      >
+                        <ExternalLink className="w-4 h-4 mr-2" />
+                        Se i Norgeskart (full oppløsning)
+                      </a>
+                    </div>
+                  </div>
+                ) : imageError ? (
+                  <div className="bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
                     <Camera className="w-16 h-16 mx-auto text-gray-400 mb-3" />
                     <p className="text-gray-700 font-medium mb-2">
-                      Satellittbildet er midlertidig utilgjengelig
+                      Kunne ikke laste kartdata
                     </p>
                     <p className="text-sm text-gray-500 mb-4">
-                      WMS-tjenesten fra Norge i bilder svarer ikke for øyeblikket
+                      WMS-tjenestene svarer ikke for øyeblikket
                     </p>
                     <a
                       href={getNorgeskartUrl(assessmentResult.coordinates)}
@@ -441,7 +465,7 @@ useEffect(() => {
                       Åpne i Norgeskart
                     </a>
                   </div>
-                )}
+                ) : null}
               </div>
             )}
             
