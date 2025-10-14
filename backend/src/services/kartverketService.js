@@ -167,6 +167,10 @@ class KartverketService {
       return true;
     }
 
+    if ([401, 403, 429].includes(error.response.status)) {
+      return true;
+    }
+
     return false;
   }
 
