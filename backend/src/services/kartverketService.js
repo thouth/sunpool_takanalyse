@@ -11,6 +11,12 @@ class KartverketService {
 
   async geocodeAddress(address) {
     try {
+      // Hvis vi bruker mock, returner mock-data direkte
+      if (this.useMock) {
+        console.log('[KartverketService] Using mock data for geocoding');
+        return this.buildMockCoordinates(address);
+      }
+
       const response = await axios.get(`${this.addressApi}/sok`, {
         params: {
           sok: address,
@@ -18,6 +24,9 @@ class KartverketService {
           side: 0,
         },
         timeout: 10000,
+        httpsAgent: new (require('https').Agent)({ 
+          rejectUnauthorized: false 
+        }),
       });
 
       if (response.data.adresser && response.data.adresser.length > 0) {
@@ -50,11 +59,20 @@ class KartverketService {
   }
 
   getSatelliteImageUrl(coordinates) {
-    if (this.useMock && process.env.MOCK_SATELLITE_IMAGE_URL) {
-      console.log('[KartverketService] Using mock satellite image URL');
+    // Sjekk først om vi skal bruke mock
+    if (this.useMock) {
+      console.log('[KartverketService] Using mock/placeholder for satellite image');
+      // Returner en enkel placeholder URL som faktisk fungerer
+      return `https://via.placeholder.com/800x800.png?text=Bygning+${coordinates.lat.toFixed(4)}N+${coordinates.lon.toFixed(4)}E`;
+    }
+
+    // Sjekk om vi har en mock URL i miljøvariablene
+    if (process.env.MOCK_SATELLITE_IMAGE_URL) {
+      console.log('[KartverketService] Using configured mock satellite image URL');
       return process.env.MOCK_SATELLITE_IMAGE_URL;
     }
 
+    // Returner URL til vår egen satellite-image endpoint
     const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3001/api';
     const url = `${apiBaseUrl}/satellite-image?lat=${coordinates.lat}&lon=${coordinates.lon}&width=800&height=800`;
     
@@ -64,6 +82,15 @@ class KartverketService {
 
   async getElevation(coordinates) {
     try {
+      // Hvis vi bruker mock, returner mock-data direkte
+      if (this.useMock) {
+        return {
+          elevation: this.buildMockElevation(coordinates),
+          datakilder: 'mock',
+          kilde: 'mock',
+        };
+      }
+
       const response = await axios.get(`${this.elevationApi}/punkt`, {
         params: {
           koordsys: '4326',
@@ -72,6 +99,9 @@ class KartverketService {
           geojson: 'false',
         },
         timeout: 10000,
+        httpsAgent: new (require('https').Agent)({ 
+          rejectUnauthorized: false 
+        }),
       });
 
       // Sikker parsing av elevation
@@ -151,23 +181,28 @@ class KartverketService {
   }
 
   shouldMock(error) {
+    // Alltid bruk mock hvis det er satt i miljøvariablene
     if (this.useMock) {
       return true;
     }
 
+    // Hvis vi ikke har en error response, bruk mock
     if (!error || !error.response) {
       return true;
     }
 
-    if (error.code && ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT'].includes(error.code)) {
+    // Nettverksfeil - bruk mock
+    if (error.code && ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNABORTED'].includes(error.code)) {
       return true;
     }
 
-    if (error.response.status >= 500) {
+    // Server-feil - bruk mock
+    if (error.response && error.response.status >= 500) {
       return true;
     }
 
-    if ([401, 403, 429].includes(error.response.status)) {
+    // Rate limiting eller auth-feil - bruk mock
+    if (error.response && [401, 403, 429].includes(error.response.status)) {
       return true;
     }
 
