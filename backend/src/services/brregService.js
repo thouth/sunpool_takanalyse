@@ -1,5 +1,6 @@
 // backend/src/services/brregService.js
 const axios = require('axios');
+const https = require('https');
 
 class BrregService {
   constructor() {
@@ -9,7 +10,20 @@ class BrregService {
 
   async verifyCompany(orgNumber) {
     try {
-      const response = await axios.get(`${this.baseUrl}/enheter/${orgNumber}`);
+      // Hvis vi bruker mock, returner mock-data direkte
+      if (this.useMock) {
+        console.log('[BrregService] Using mock data for company verification');
+        return this.buildMockCompany(orgNumber);
+      }
+
+      console.log('[BrregService] Verifying company:', orgNumber);
+      
+      const response = await axios.get(`${this.baseUrl}/enheter/${orgNumber}`, {
+        timeout: 10000,
+        httpsAgent: new https.Agent({ 
+          rejectUnauthorized: false 
+        }),
+      });
 
       return {
         valid: true,
@@ -22,6 +36,8 @@ class BrregService {
         kilde: 'brreg',
       };
     } catch (error) {
+      console.error('[BrregService] Error:', error.message);
+      
       if (error.response && error.response.status === 404) {
         const notFoundError = new Error('Organization number not found');
         notFoundError.status = 404;
@@ -29,7 +45,7 @@ class BrregService {
       }
 
       if (this.shouldMock(error)) {
-        console.warn('BrregService: Falling back to mock data', error.message || error.code);
+        console.warn('[BrregService] Falling back to mock data');
         return this.buildMockCompany(orgNumber);
       }
 
@@ -38,23 +54,28 @@ class BrregService {
   }
 
   shouldMock(error) {
+    // Alltid bruk mock hvis det er satt
     if (this.useMock) {
       return true;
     }
 
-    if (!error.response) {
+    // Ingen response = nettverksfeil
+    if (!error || !error.response) {
       return true;
     }
 
-    if (error.code && ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT'].includes(error.code)) {
+    // Nettverksfeil
+    if (error.code && ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNABORTED'].includes(error.code)) {
       return true;
     }
 
-    if (error.response.status >= 500) {
+    // Server-feil
+    if (error.response && error.response.status >= 500) {
       return true;
     }
 
-    if ([401, 403, 429].includes(error.response.status)) {
+    // Auth eller rate limiting
+    if (error.response && [401, 403, 429].includes(error.response.status)) {
       return true;
     }
 
@@ -78,15 +99,16 @@ class BrregService {
       navn: `${mockNames[index]} ${orgNumber.slice(-3)}`,
       organisasjonsnummer: orgNumber,
       forretningsadresse: {
-        adresse: `${kommuneData.street} ${50 + (index * 3)}`,
+        adresse: [`${kommuneData.street} ${50 + (index * 3)}`],
         postnummer: kommuneData.postnummer,
         poststed: kommuneData.poststed,
         kommunenavn: kommuneData.kommune,
         kommunenummer: kommuneData.kommunenummer,
         land: 'Norge',
+        landkode: 'NO',
       },
       naeringskode: {
-        kode: '35110',
+        kode: '35.110',
         beskrivelse: 'Produksjon av elektrisitet',
       },
       ansatte: 15 + index * 8,
