@@ -1,7 +1,7 @@
 // frontend/src/components/SolarAssessmentApp.jsx
-import React, { useEffect, useState } from 'react';
-import { Sun, Building, MapPin, Wind, AlertCircle, CheckCircle, Search, Loader2, Zap, Cloud, Home, Camera, Map, Info, ThermometerSun, Droplets, Clock, ExternalLink } from 'lucide-react';
-import { assessmentService, getDefaultHeaders } from '../services/api';
+import React, { useState } from 'react';
+import { Sun, Building, MapPin, Wind, AlertCircle, CheckCircle, Search, Loader2, Zap, Cloud, Home, Map, Info, ThermometerSun, Droplets, Clock } from 'lucide-react';
+import { assessmentService } from '../services/api';
 import {
   calculateAnnualProduction,
   calculateCo2Savings,
@@ -14,6 +14,7 @@ import {
   formatTonsPerYear,
   formatYears,
 } from '../utils/calculations';
+import SatellitePreview from './AssessmentResult/SatellitePreview';
 
 const SolarAssessmentApp = () => {
   const [companyData, setCompanyData] = useState({
@@ -30,20 +31,11 @@ const SolarAssessmentApp = () => {
   const [assessmentResult, setAssessmentResult] = useState(null);
   const [errors, setErrors] = useState({});
   const [showApiInfo, setShowApiInfo] = useState(false);
-  const [imageError, setImageError] = useState(false);
-  const [satelliteImageUrl, setSatelliteImageUrl] = useState(null);
-  const [isSatelliteImageLoading, setIsSatelliteImageLoading] = useState(false);
-  const [imageSource, setImageSource] = useState(null);
-
   const performAssessment = async () => {
     setIsLoading(true);
     setErrors({});
     setAssessmentResult(null);
-    setImageError(false);
-    setSatelliteImageUrl(null);
-    setIsSatelliteImageLoading(false);
-    setImageSource(null);
-    
+
     try {
       setCurrentStep('Starter vurdering...');
       
@@ -98,12 +90,6 @@ const SolarAssessmentApp = () => {
     return 'Mindre egnet for solceller';
   };
 
-  // Generer riktig Norgeskart URL
-  const getNorgeskartUrl = (coords) => {
-    if (!coords) return '#';
-    return `https://norgeskart.no/#!?project=norgeskart&layers=1002&zoom=17&lat=${coords.lat.toFixed(6)}&lon=${coords.lon.toFixed(6)}&markerLat=${coords.lat.toFixed(6)}&markerLon=${coords.lon.toFixed(6)}&panel=searchOptionsPanel`;
-  };
-
   const weather = assessmentResult?.weather;
   const roofAnalysis = assessmentResult?.roofAnalysis?.analysis;
   const locationAnalysis = assessmentResult?.locationAnalysis;
@@ -119,124 +105,6 @@ const SolarAssessmentApp = () => {
   const formattedWeatherUpdatedAt = weather?.updatedAt
     ? new Date(weather.updatedAt).toLocaleString('no-NO')
     : null;
-
-  // Forbedret satellittbilde-håndtering
-  useEffect(() => {
-    const loadSatelliteImage = async () => {
-      const imageEndpoint = assessmentResult?.roofAnalysis?.imageUrl;
-
-      if (!imageEndpoint) {
-        console.log('[Frontend] No image endpoint available');
-        setSatelliteImageUrl(null);
-        setIsSatelliteImageLoading(false);
-        return;
-      }
-
-      // Reset states
-      setImageError(false);
-      setIsSatelliteImageLoading(true);
-      setSatelliteImageUrl(null);
-      setImageSource(null);
-
-      try {
-        console.log('[Frontend] Loading satellite image from:', imageEndpoint);
-
-        // Parse URL og legg til format parameter
-        let fetchUrl;
-        try {
-          fetchUrl = new URL(imageEndpoint);
-        } catch (error) {
-          // Hvis imageEndpoint er relativ, gjør den absolutt
-          fetchUrl = new URL(imageEndpoint, window.location.origin);
-        }
-
-        // Legg til format=data-url parameter
-        fetchUrl.searchParams.set('format', 'data-url');
-
-        const finalUrl = fetchUrl.toString();
-        console.log('[Frontend] Fetching from:', finalUrl);
-
-        // Fetch med timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 sekunder timeout
-
-        try {
-          const response = await fetch(finalUrl, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-            },
-            mode: 'cors',
-            cache: 'default',
-            signal: controller.signal,
-          });
-
-          clearTimeout(timeoutId);
-
-          console.log('[Frontend] Response status:', response.status);
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[Frontend] Error response:', errorText);
-            throw new Error(`HTTP ${response.status}`);
-          }
-
-          const payload = await response.json();
-          console.log('[Frontend] Response received:', {
-            success: payload?.success,
-            hasData: !!payload?.data,
-            source: payload?.data?.source,
-            cached: payload?.data?.cached,
-          });
-
-          if (!payload.success) {
-            throw new Error(payload.error || 'Failed to fetch image');
-          }
-
-          const imageData = payload?.data;
-          if (!imageData || !imageData.dataUrl) {
-            throw new Error('No image data in response');
-          }
-
-          // Valider data URL
-          if (!imageData.dataUrl.startsWith('data:')) {
-            throw new Error('Invalid image data format');
-          }
-
-          // Sett bilde og kilde
-          setSatelliteImageUrl(imageData.dataUrl);
-          setImageSource(imageData.source || 'Unknown');
-          setImageError(false);
-
-          console.log('[Frontend] ✅ Image loaded successfully from:', imageData.source);
-
-        } catch (fetchError) {
-          clearTimeout(timeoutId);
-          
-          if (fetchError.name === 'AbortError') {
-            console.error('[Frontend] Request timed out after 30 seconds');
-          } else {
-            console.error('[Frontend] Fetch error:', fetchError.message);
-          }
-          throw fetchError;
-        }
-
-      } catch (error) {
-        console.error('[Frontend] Failed to load satellite image:', error);
-        setSatelliteImageUrl(null);
-        setImageError(true);
-        setImageSource(null);
-      } finally {
-        setIsSatelliteImageLoading(false);
-      }
-    };
-
-    // Kjør loading hvis vi har en imageUrl
-    if (assessmentResult?.roofAnalysis?.imageUrl) {
-      loadSatelliteImage();
-    }
-  }, [assessmentResult?.roofAnalysis?.imageUrl]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-yellow-50 p-4">
@@ -391,82 +259,12 @@ const SolarAssessmentApp = () => {
             </div>
             
             {/* Satellite Image */}
-            {assessmentResult.roofAnalysis && assessmentResult.roofAnalysis.imageUrl && (
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-                  <Camera className="w-5 h-5 mr-2 text-blue-500" />
-                  Kartgrunnlag
-                  {imageSource && imageSource !== 'placeholder' && (
-                    <span className="ml-2 text-sm font-normal text-gray-500">
-                      (Kilde: {imageSource})
-                    </span>
-                  )}
-                </h3>
-                
-                {isSatelliteImageLoading ? (
-                  <div className="bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
-                    <Loader2 className="w-8 h-8 mx-auto text-blue-500 mb-3 animate-spin" />
-                    <p className="text-gray-700 font-medium mb-1">
-                      Henter kartdata...
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Kontakter Kartverket WMS-tjeneste
-                    </p>
-                  </div>
-                ) : satelliteImageUrl ? (
-                  <div className="space-y-4">
-                    <div className="rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-50">
-                      <img
-                        src={satelliteImageUrl}
-                        alt="Kartutsnitt av området"
-                        className="w-full h-auto"
-                        onError={() => {
-                          console.error('[Frontend] Image failed to render');
-                          setImageError(true);
-                          setSatelliteImageUrl(null);
-                        }}
-                      />
-                    </div>
-                    {imageSource === 'placeholder' && (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                        <p className="text-sm text-yellow-800">
-                          ⚠️ WMS-tjenestene er midlertidig utilgjengelige. Viser kartsymbol for lokasjon.
-                        </p>
-                      </div>
-                    )}
-                    <div className="flex justify-center">
-                      <a
-                        href={getNorgeskartUrl(assessmentResult.coordinates)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-                      >
-                        <ExternalLink className="w-4 h-4 mr-2" />
-                        Se i Norgeskart (full oppløsning)
-                      </a>
-                    </div>
-                  </div>
-                ) : imageError ? (
-                  <div className="bg-gray-100 rounded-lg p-12 text-center border-2 border-dashed border-gray-300">
-                    <Camera className="w-16 h-16 mx-auto text-gray-400 mb-3" />
-                    <p className="text-gray-700 font-medium mb-2">
-                      Kunne ikke laste kartdata
-                    </p>
-                    <p className="text-sm text-gray-500 mb-4">
-                      WMS-tjenestene svarer ikke for øyeblikket
-                    </p>
-                    <a
-                      href={getNorgeskartUrl(assessmentResult.coordinates)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-                    >
-                      <ExternalLink className="w-4 h-4 mr-2" />
-                      Åpne i Norgeskart
-                    </a>
-                  </div>
-                ) : null}
-              </div>
+            {assessmentResult?.roofAnalysis && (
+              <SatellitePreview
+                imageEndpoint={assessmentResult.roofAnalysis.imageUrl}
+                norgeskartUrl={assessmentResult.roofAnalysis.norgeskartUrl}
+                coordinates={assessmentResult.coordinates}
+              />
             )}
             
             {/* Analysis Results */}
