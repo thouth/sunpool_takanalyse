@@ -10,12 +10,14 @@ exports.analyzeRoof = async (req, res, next) => {
     console.log(`Analyzing roof at coordinates: ${coordinates.lat}, ${coordinates.lon}`);
 
     const imageUrl = kartverketService.getSatelliteImageUrl(coordinates);
+    const norgeskartUrl = kartverketService.getNorgeskartUrl(coordinates);
     const analysis = await imageAnalysisService.analyzeRoof(imageUrl, coordinates);
 
     res.json({
       success: true,
       data: {
         imageUrl,
+        norgeskartUrl,
         analysis,
       },
     });

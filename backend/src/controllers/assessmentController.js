@@ -15,6 +15,7 @@ exports.performAssessment = async (req, res, next) => {
     const coordinates = await kartverketService.geocodeAddress(address);
 
     const imageUrl = kartverketService.getSatelliteImageUrl(coordinates);
+    const norgeskartUrl = kartverketService.getNorgeskartUrl(coordinates);
     const roofAnalysis = await imageAnalysisService.analyzeRoof(imageUrl, coordinates);
 
     const locationAnalysis = await kartverketService.analyzeLocation(coordinates);
@@ -28,6 +29,7 @@ exports.performAssessment = async (req, res, next) => {
       coordinates,
       roofAnalysis: {
         imageUrl,
+        norgeskartUrl,
         analysis: roofAnalysis,
       },
       locationAnalysis,

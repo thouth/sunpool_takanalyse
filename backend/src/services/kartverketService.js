@@ -108,6 +108,17 @@ class KartverketService {
     return url;
   }
 
+  getNorgeskartUrl(coordinates, { zoom = 18 } = {}) {
+    if (!coordinates || typeof coordinates.lat !== 'number' || typeof coordinates.lon !== 'number') {
+      throw new Error('Valid coordinates are required to generate Norgeskart URL');
+    }
+
+    const lat = coordinates.lat.toFixed(6);
+    const lon = coordinates.lon.toFixed(6);
+
+    return `https://norgeskart.no/#!?project=norgeskart&layers=1002&zoom=${zoom}&lat=${lat}&lon=${lon}&markerLat=${lat}&markerLon=${lon}&panel=searchOptionsPanel&showSelection=false`;
+  }
+
   async getElevation(coordinates) {
     const requestSource = 'Kartverket Elevation API';
     let requestStarted;
