@@ -10,6 +10,9 @@ class KartverketService {
   }
 
   async geocodeAddress(address) {
+    const requestSource = 'Kartverket Adresse API';
+    const requestStarted = Date.now();
+
     try {
       // Hvis vi bruker mock, returner mock-data direkte
       if (this.useMock) {
@@ -29,7 +32,15 @@ class KartverketService {
         }),
       });
 
+      const responseTimeMs = Date.now() - requestStarted;
+
       if (response.data.adresser && response.data.adresser.length > 0) {
+        this.logExternalCall('geocodeAddress', {
+          source: requestSource,
+          status: response.status,
+          durationMs: responseTimeMs,
+        });
+
         const addr = response.data.adresser[0];
         return {
           lat: addr.representasjonspunkt.lat,
@@ -43,9 +54,22 @@ class KartverketService {
 
       const notFoundError = new Error('Address not found');
       notFoundError.status = 404;
+      notFoundError.durationMs = responseTimeMs;
       throw notFoundError;
     } catch (error) {
-      if (error.status === 404 || (error.response && error.response.status === 404)) {
+      const durationMs = typeof error.durationMs === 'number'
+        ? error.durationMs
+        : Date.now() - requestStarted;
+      const status = error.response?.status ?? error.status;
+
+      this.logExternalCall('geocodeAddress', {
+        source: requestSource,
+        status,
+        durationMs,
+        error,
+      });
+
+      if (status === 404) {
         throw error;
       }
 
@@ -85,6 +109,9 @@ class KartverketService {
   }
 
   async getElevation(coordinates) {
+    const requestSource = 'Kartverket Elevation API';
+    let requestStarted;
+
     try {
       // Hvis vi bruker mock, returner mock-data direkte
       if (this.useMock) {
@@ -95,6 +122,7 @@ class KartverketService {
         };
       }
 
+      requestStarted = Date.now();
       const response = await axios.get(`${this.elevationApi}/punkt`, {
         params: {
           koordsys: '4326',
@@ -108,9 +136,16 @@ class KartverketService {
         }),
       });
 
+      const responseTimeMs = Date.now() - requestStarted;
+      this.logExternalCall('getElevation', {
+        source: requestSource,
+        status: response.status,
+        durationMs: responseTimeMs,
+      });
+
       // Sikker parsing av elevation
       let elevation = 0;
-      
+
       if (response.data) {
         if (response.data.punkt && typeof response.data.punkt.z === 'number') {
           elevation = response.data.punkt.z;
@@ -128,7 +163,14 @@ class KartverketService {
       };
     } catch (error) {
       console.warn('[KartverketService] Elevation API error:', error.message);
-      
+
+      this.logExternalCall('getElevation', {
+        source: requestSource,
+        status: error.response?.status ?? error.status,
+        durationMs: typeof requestStarted === 'number' ? Date.now() - requestStarted : undefined,
+        error,
+      });
+
       if (this.shouldMock(error)) {
         console.warn('[KartverketService] Elevation - falling back to mock');
         return {
@@ -242,6 +284,34 @@ class KartverketService {
     const noise = Math.sin(coordinates.lat * 0.8 + coordinates.lon * 1.2) * 50;
     const base = coordinates.lat > 63 ? 250 : coordinates.lat < 59 ? 50 : 120;
     return Math.round(base + noise);
+  }
+
+  logExternalCall(operation, { source, status, durationMs, error }) {
+    const payload = {
+      source,
+      status: typeof status === 'number' ? status : status || 'unknown',
+    };
+
+    if (typeof durationMs === 'number') {
+      payload.durationMs = durationMs;
+    }
+
+    if (error) {
+      payload.errorMessage = error.message;
+      if (error.response && error.response.data) {
+        try {
+          payload.errorResponse = typeof error.response.data === 'string'
+            ? error.response.data.slice(0, 200)
+            : JSON.stringify(error.response.data).slice(0, 200);
+        } catch (stringifyError) {
+          payload.errorResponse = '[unserializable response data]';
+        }
+      }
+
+      console.error(`[KartverketService] ${operation} failed`, payload);
+    } else {
+      console.info(`[KartverketService] ${operation} succeeded`, payload);
+    }
   }
 
   hash(value) {

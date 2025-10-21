@@ -11,6 +11,7 @@ const assessmentController = require('../controllers/assessmentController');
 const validateRequest = require('../middleware/validateRequest');
 const { requireApiKey } = require('../middleware/auth');
 const { createRateLimiter } = require('../middleware/ratelimit');
+const { registerSatelliteDiagnosticsRoutes } = require('./satelliteImageRoutes');
 
 const router = express.Router();
 
@@ -508,20 +509,6 @@ router.get('/satellite-image/norgeskart-url', (req, res) => {
 /**
  * Cache management endpoints
  */
-router.get('/satellite-image/cache/stats', (req, res) => {
-  const stats = imageCache.getStats();
-  res.json({
-    success: true,
-    data: {
-      keys: imageCache.keys().length,
-      hits: stats.hits,
-      misses: stats.misses,
-      ksize: stats.ksize,
-      vsize: stats.vsize,
-    },
-  });
-});
-
 router.delete('/satellite-image/cache/clear', (req, res) => {
   imageCache.flushAll();
   console.log('[Satellite] Cache cleared');
@@ -531,23 +518,6 @@ router.delete('/satellite-image/cache/clear', (req, res) => {
   });
 });
 
-/**
- * Debug endpoint for testing WMS directly
- */
-router.get('/satellite-image/debug', async (req, res) => {
-  const { lat = 59.9139, lon = 10.7522 } = req.query;
-  
-  res.json({
-    success: true,
-    message: 'Debug endpoint for satellite images',
-    testUrls: {
-      tile17: `https://cache.kartverket.no/v1/wmts/1.0.0/nib/default/webmercator/17/42666/21788.jpeg`,
-      wms: `https://openwms.statkart.no/skwms1/wms.nib?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=ortofoto&STYLES=&FORMAT=image/jpeg&SRS=EPSG:4326&WIDTH=512&HEIGHT=512&BBOX=${lon-0.005},${lat-0.005},${lon+0.005},${lat+0.005}`,
-      osm: `https://a.tile.openstreetmap.org/15/16777/9552.png`,
-    },
-    coordinates: { lat, lon },
-    tileCoords: latLonToTile(parseFloat(lat), parseFloat(lon), 17),
-  });
-});
+registerSatelliteDiagnosticsRoutes(router, { imageCache, latLonToTile });
 
 module.exports = router;
