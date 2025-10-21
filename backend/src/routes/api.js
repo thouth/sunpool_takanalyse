@@ -167,8 +167,28 @@ router.get('/satellite-image', async (req, res) => {
   
   try {
     const { lat, lon, width = 800, height = 800, format } = req.query;
+    const mockSatelliteImageUrl = (process.env.MOCK_SATELLITE_IMAGE_URL || '').trim();
 
     console.log('\n[Satellite] Request:', { lat, lon, width, height });
+
+    if (mockSatelliteImageUrl) {
+      console.log('[Satellite] Serving MOCK_SATELLITE_IMAGE_URL without contacting external services');
+      const match = mockSatelliteImageUrl.match(/^data:([^;]+);base64,/i);
+      const contentType = match ? match[1] : 'image/png';
+
+      return res.json({
+        success: true,
+        data: {
+          dataUrl: mockSatelliteImageUrl,
+          contentType,
+          width: Number(width) || 800,
+          height: Number(height) || 800,
+          source: 'Mock (environment)',
+          cached: false,
+          mock: true,
+        },
+      });
+    }
 
     if (!lat || !lon) {
       return res.status(400).json({

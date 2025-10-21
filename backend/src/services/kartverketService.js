@@ -7,6 +7,7 @@ class KartverketService {
     this.wmsUrl = process.env.KARTVERKET_WMS_URL || 'https://wms.geonorge.no/skwms1/wms.nib';
     this.elevationApi = process.env.KARTVERKET_ELEVATION_API || 'https://ws.geonorge.no/hoydedata/v1';
     this.useMock = process.env.MOCK_EXTERNAL_APIS === 'true';
+    this.mockSatelliteImageUrl = (process.env.MOCK_SATELLITE_IMAGE_URL || '').trim() || null;
   }
 
   async geocodeAddress(address) {
@@ -83,17 +84,17 @@ class KartverketService {
   }
 
   getSatelliteImageUrl(coordinates) {
-    // Sjekk først om vi skal bruke mock
+    // Sjekk om vi har en mock URL i miljøvariablene
+    if (this.mockSatelliteImageUrl) {
+      console.log('[KartverketService] Using configured mock satellite image URL from environment');
+      return this.mockSatelliteImageUrl;
+    }
+
+    // Sjekk om vi skal bruke mock-modus generelt
     if (this.useMock) {
       console.log('[KartverketService] Using mock/placeholder for satellite image');
       // Returner en enkel placeholder URL som faktisk fungerer
       return `https://via.placeholder.com/800x800.png?text=Bygning+${coordinates.lat.toFixed(4)}N+${coordinates.lon.toFixed(4)}E`;
-    }
-
-    // Sjekk om vi har en mock URL i miljøvariablene
-    if (process.env.MOCK_SATELLITE_IMAGE_URL) {
-      console.log('[KartverketService] Using configured mock satellite image URL');
-      return process.env.MOCK_SATELLITE_IMAGE_URL;
     }
 
     // Returner URL til vår egen satellite-image endpoint
