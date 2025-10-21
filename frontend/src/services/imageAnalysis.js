@@ -1,5 +1,5 @@
 // frontend/src/services/imageAnalysis.js
-import { apiRequest } from './api';
+import { apiRequest, buildSatelliteImageUrl } from './api';
 
 export const fetchRoofAnalysis = async (coordinates) => {
   const response = await apiRequest('/analysis/roof', {
@@ -19,7 +19,11 @@ export const fetchLocationAnalysis = async (coordinates, includeWeather = true) 
   return response.data;
 };
 
-export const fetchSatelliteImage = async (coordinates) => {
+export const fetchSatelliteImage = async (coordinates, options) => {
   const roofAnalysis = await fetchRoofAnalysis(coordinates);
-  return roofAnalysis.imageUrl;
+  if (roofAnalysis?.imageUrl) {
+    return roofAnalysis.imageUrl;
+  }
+
+  return buildSatelliteImageUrl(coordinates, options);
 };

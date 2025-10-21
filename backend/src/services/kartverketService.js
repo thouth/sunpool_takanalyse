@@ -73,7 +73,11 @@ class KartverketService {
     }
 
     // Returner URL til vår egen satellite-image endpoint
-    const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3001/api';
+    const isProduction = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+    const defaultApiBaseUrl = isProduction
+      ? 'https://solar-assessment-backend.onrender.com/api'
+      : 'http://localhost:3001/api';
+    const apiBaseUrl = process.env.API_BASE_URL || defaultApiBaseUrl;
     const url = `${apiBaseUrl}/satellite-image?lat=${coordinates.lat}&lon=${coordinates.lon}&width=800&height=800`;
     
     console.log('[KartverketService] Generated satellite URL:', url);

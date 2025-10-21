@@ -47,6 +47,8 @@ services:
     envVars:
       - key: REACT_APP_API_URL
         value: https://solar-assessment-backend.onrender.com/api
+      - key: REACT_APP_API_BASE_URL
+        value: https://solar-assessment-backend.onrender.com/api
       - key: REACT_APP_ENVIRONMENT
         value: production
     routes:

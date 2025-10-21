@@ -1,5 +1,10 @@
 // frontend/src/services/api.js
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+const DEFAULT_API_URL = 'http://localhost:3001/api';
+const API_URL = process.env.REACT_APP_API_URL || DEFAULT_API_URL;
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || API_URL;
+const ensureTrailingSlash = (url) => (url.endsWith('/') ? url : `${url}/`);
+const normalizeBaseUrl = (url) => url.replace(/\/$/, '');
+const getBaseUrl = () => normalizeBaseUrl(API_BASE_URL || API_URL);
 const API_KEY = process.env.REACT_APP_API_KEY;
 
 const buildHeaders = (headers = {}) => {
@@ -116,5 +121,26 @@ export const assessmentService = {
   },
 };
 
-export { API_URL };
+export { API_URL, API_BASE_URL };
 export const getDefaultHeaders = () => buildHeaders();
+export const buildSatelliteImageUrl = (coordinates, { width = 800, height = 800, format, cacheBust } = {}) => {
+  if (!coordinates || typeof coordinates.lat !== 'number' || typeof coordinates.lon !== 'number') {
+    throw new Error('Coordinates with numeric lat/lon are required to build satellite image URL');
+  }
+
+  const url = new URL('satellite-image', ensureTrailingSlash(getBaseUrl()));
+  url.searchParams.set('lat', coordinates.lat);
+  url.searchParams.set('lon', coordinates.lon);
+  url.searchParams.set('width', width);
+  url.searchParams.set('height', height);
+
+  if (format) {
+    url.searchParams.set('format', format);
+  }
+
+  if (cacheBust) {
+    url.searchParams.set('cb', cacheBust);
+  }
+
+  return url.toString();
+};
