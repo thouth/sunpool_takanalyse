@@ -76,7 +76,8 @@ Denne veiledningen gir en komplett oppskrift på hvordan du produksjonssetter b�
 
    | Nøkkel | Verdi |
    | --- | --- |
-   | `REACT_APP_API_URL` | URL-en til backend + `/api`, f.eks. `https://solar-assessment-api.onrender.com/api` |
+  | `REACT_APP_API_URL` | URL-en til backend + `/api`, f.eks. `https://solar-assessment-api.onrender.com/api` |
+  | `REACT_APP_API_BASE_URL` | Samme som over, brukes til å bygge bilde-endepunkter i klienten |
    | `REACT_APP_ENVIRONMENT` | `production` |
    | `REACT_APP_API_KEY` | Samme verdi som `API_ACCESS_KEY` hvis backend krever nøkkel |
 
