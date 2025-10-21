@@ -1,0 +1,53 @@
+name: Satellite diagnostics monitor
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    name: Call satellite debug endpoint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure URL is configured
+        env:
+          SATELLITE_DEBUG_URL: ${{ secrets.SATELLITE_DEBUG_URL }}
+        run: |
+          if [ -z "${SATELLITE_DEBUG_URL}" ]; then
+            echo "SATELLITE_DEBUG_URL secret is not configured"
+            exit 1
+          fi
+
+      - name: Invoke debug endpoint
+        env:
+          SATELLITE_DEBUG_URL: ${{ secrets.SATELLITE_DEBUG_URL }}
+          SATELLITE_DEBUG_API_KEY: ${{ secrets.SATELLITE_DEBUG_API_KEY }}
+        run: |
+          set -euo pipefail
+          tmp_file=$(mktemp)
+
+          curl_args=("--silent" "--show-error" "--location" "--max-time" "30" "--output" "$tmp_file" "--write-out" "%{http_code}" "${SATELLITE_DEBUG_URL}")
+          if [ -n "${SATELLITE_DEBUG_API_KEY:-}" ]; then
+            curl_args=("-H" "x-api-key: ${SATELLITE_DEBUG_API_KEY}" "${curl_args[@]}")
+          fi
+
+          http_code=$(curl "${curl_args[@]}")
+          echo "HTTP status: ${http_code}"
+
+          if [ "${http_code}" -ne 200 ]; then
+            echo "Unexpected HTTP status"
+            cat "$tmp_file"
+            rm -f "$tmp_file"
+            exit 1
+          fi
+
+          if ! jq -e '.success == true' "$tmp_file" > /dev/null; then
+            echo "Endpoint did not return success=true"
+            cat "$tmp_file"
+            rm -f "$tmp_file"
+            exit 1
+          fi
+
+          echo "Satellite debug endpoint responded successfully"
+          rm -f "$tmp_file"
