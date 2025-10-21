@@ -1,5 +1,30 @@
 // backend/src/services/kartverketService.js
 const axios = require('axios');
+const NodeCache = require('node-cache');
+
+function resolveNonNegativeInteger(value, fallback) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(String(value), 10);
+
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+const DEFAULT_SATELLITE_CACHE_TTL_SECONDS = resolveNonNegativeInteger(
+  process.env.SATELLITE_CACHE_TTL_SECONDS,
+  60 * 60 * 24,
+);
+
+const DEFAULT_SATELLITE_CACHE_CHECK_PERIOD_SECONDS = resolveNonNegativeInteger(
+  process.env.SATELLITE_CACHE_CHECK_PERIOD_SECONDS,
+  60 * 60,
+);
 
 class KartverketService {
   constructor() {
@@ -8,6 +33,14 @@ class KartverketService {
     this.elevationApi = process.env.KARTVERKET_ELEVATION_API || 'https://ws.geonorge.no/hoydedata/v1';
     this.useMock = process.env.MOCK_EXTERNAL_APIS === 'true';
     this.mockSatelliteImageUrl = (process.env.MOCK_SATELLITE_IMAGE_URL || '').trim() || null;
+
+    this.satelliteCacheConfig = {
+      stdTTL: DEFAULT_SATELLITE_CACHE_TTL_SECONDS,
+      checkperiod: DEFAULT_SATELLITE_CACHE_CHECK_PERIOD_SECONDS,
+      useClones: false,
+    };
+
+    this.satelliteImageCache = new NodeCache(this.satelliteCacheConfig);
   }
 
   async geocodeAddress(address) {
@@ -296,6 +329,22 @@ class KartverketService {
     const noise = Math.sin(coordinates.lat * 0.8 + coordinates.lon * 1.2) * 50;
     const base = coordinates.lat > 63 ? 250 : coordinates.lat < 59 ? 50 : 120;
     return Math.round(base + noise);
+  }
+
+  getSatelliteCacheConfig() {
+    return { ...this.satelliteCacheConfig };
+  }
+
+  getSatelliteCacheTtlSeconds() {
+    return this.satelliteCacheConfig.stdTTL;
+  }
+
+  getSatelliteCacheCheckPeriodSeconds() {
+    return this.satelliteCacheConfig.checkperiod;
+  }
+
+  getSatelliteImageCache() {
+    return this.satelliteImageCache;
   }
 
   logExternalCall(operation, { source, status, durationMs, error }) {

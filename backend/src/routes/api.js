@@ -1,7 +1,6 @@
 // backend/src/routes/api.js
 const express = require('express');
 const axios = require('axios');
-const NodeCache = require('node-cache');
 const https = require('https');
 
 const companyController = require('../controllers/companyController');
@@ -12,11 +11,12 @@ const validateRequest = require('../middleware/validateRequest');
 const { requireApiKey } = require('../middleware/auth');
 const { createRateLimiter } = require('../middleware/ratelimit');
 const { registerSatelliteDiagnosticsRoutes } = require('./satelliteImageRoutes');
+const kartverketService = require('../services/kartverketService');
 
 const router = express.Router();
 
 // Cache for satellittbilder (24 timer TTL)
-const imageCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
+const imageCache = kartverketService.getSatelliteImageCache();
 
 const analysisLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 20 });
 const assessmentLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 15 });
@@ -530,6 +530,13 @@ router.get('/satellite-image/norgeskart-url', (req, res) => {
  * Cache management endpoints
  */
 router.delete('/satellite-image/cache/clear', (req, res) => {
+  if (!req.authenticated) {
+    return res.status(403).json({
+      success: false,
+      error: 'Satellite image cache reset requires a valid API key',
+    });
+  }
+
   imageCache.flushAll();
   console.log('[Satellite] Cache cleared');
   res.json({
