@@ -9,6 +9,8 @@ services:
       - "3000:3000"
     environment:
       - REACT_APP_API_URL=http://localhost:3001
+      - REACT_APP_USE_MOCK_SATELLITE=${REACT_APP_USE_MOCK_SATELLITE:-false}
+      - REACT_APP_MOCK_SATELLITE_ASSET=${REACT_APP_MOCK_SATELLITE_ASSET:-}
     depends_on:
       - backend
     volumes:
@@ -25,6 +27,8 @@ services:
       - NODE_ENV=development
       - PORT=3001
       - CORS_ORIGIN=http://localhost:3000
+      - MOCK_EXTERNAL_APIS=${MOCK_EXTERNAL_APIS:-false}
+      - MOCK_SATELLITE_IMAGE_URL=${MOCK_SATELLITE_IMAGE_URL:-}
     volumes:
       - ./backend:/app
       - /app/node_modules

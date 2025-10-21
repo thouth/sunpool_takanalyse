@@ -2,6 +2,32 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Camera, ExternalLink, Loader2 } from 'lucide-react';
 
+const USE_MOCK_SATELLITE = process.env.REACT_APP_USE_MOCK_SATELLITE === 'true';
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
+const CUSTOM_MOCK_ASSET = (process.env.REACT_APP_MOCK_SATELLITE_ASSET || '').trim();
+const DEFAULT_MOCK_SATELLITE_DATA_URL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB5ElEQVR4nO2aPUoDQRSGP87QUFAS9AYKghLBRBAErUFBBBF0LoIpGEAslpsKSK3UXRIkKCeKTLbLZndmZmFn7L2bnZXjvr/5vdmd2dtcpoUgghhBBCCCGEEEIIIcR/AZOCYQeQc12VN2YClusj6i1qfqU7KoM0sA4mdQF2KxiywkVbBLoEi8Ctv6E6AQsAEcpcAUdP+Ml5AkxAG9F5FjAJtLj2Y0e6lEu8aRE4B3wJyDEglwgXwFfjkcS3Ykh8AvoORijAETChvNsq4hF0gP4DshxIJ0A5Mbrha4mdVXh7p8sEVAA70k4msA0sDmAFvkM8BTVROq0yD4P0Fg+iD+Bp8BMgFgQKebz9lUSFgvW4uVZKwBlwZjDk8JThpprqvkQi4F4KRUQYgH94Db6zYnW1IwBpwUwKTyfIkz9lESVgva9dpUlsDlBzOGZwmPFNN9V8iEXAvRUoI0gP7wG32uxOtaRgDzgpgUnk+RJn7KIlrBcz26ShLYHODmMMTwtMGmmup+RCLgXgpFBBiAf3gNvrNidbUjAGnBTApPJ8iTP2URJWC9r12lSWwOUHM4ZnCY8U031XyIRcC9FShDyLoDeYl8QtTNq15QOKow64/Bn+o0wHhETQBsyvC2TisXiK++3+nz05hvxDVaPgNLRmdYXqzvGTysPRbH3c+k2uAZdqaLAp3EKu2sbqw1hohi3fEBBbIv3O8P09xfrQlhj1XFRCCGEEEIIIYQQQggh5AP8BnUsHuAeJEEwAAAAAElFTkSuQmCC';
+
+const resolveMockSatelliteImage = () => {
+  if (CUSTOM_MOCK_ASSET) {
+    if (CUSTOM_MOCK_ASSET.startsWith('data:')) {
+      return CUSTOM_MOCK_ASSET;
+    }
+
+    if (/^https?:\/\//i.test(CUSTOM_MOCK_ASSET)) {
+      return CUSTOM_MOCK_ASSET;
+    }
+
+    const normalisedCustomAsset = CUSTOM_MOCK_ASSET.startsWith('/')
+      ? CUSTOM_MOCK_ASSET
+      : `/${CUSTOM_MOCK_ASSET}`;
+
+    return `${PUBLIC_URL}${normalisedCustomAsset}`;
+  }
+
+  return DEFAULT_MOCK_SATELLITE_DATA_URL;
+};
+
 const buildFallbackNorgeskartUrl = (coordinates) => {
   if (!coordinates || typeof coordinates.lat !== 'number' || typeof coordinates.lon !== 'number') {
     return null;
@@ -36,6 +62,15 @@ const SatellitePreview = ({ imageEndpoint, norgeskartUrl, coordinates }) => {
         setIsPlaceholder(false);
         setErrorMessage(null);
         setIsLoading(false);
+        return;
+      }
+
+      if (USE_MOCK_SATELLITE) {
+        setIsLoading(false);
+        setErrorMessage(null);
+        setImageDataUrl(resolveMockSatelliteImage());
+        setImageSource('Mock (lokalt bilde)');
+        setIsPlaceholder(true);
         return;
       }
 
