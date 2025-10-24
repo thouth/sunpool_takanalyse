@@ -1,10 +1,30 @@
 // frontend/src/services/api.js
-const DEFAULT_API_URL = 'http://localhost:3001/api';
-const API_URL = process.env.REACT_APP_API_URL || DEFAULT_API_URL;
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || API_URL;
+const resolveDefaultApiUrl = () => {
+  if (typeof window !== 'undefined' && window?.location?.origin) {
+    const origin = window.location.origin.replace(/\/$/, '');
+    return `${origin}/api`;
+  }
+
+  return 'http://localhost:3001/api';
+};
 const ensureTrailingSlash = (url) => (url.endsWith('/') ? url : `${url}/`);
-const normalizeBaseUrl = (url) => url.replace(/\/$/, '');
-const getBaseUrl = () => normalizeBaseUrl(API_BASE_URL || API_URL);
+const toAbsoluteUrl = (url) => {
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  if (typeof window !== 'undefined' && window?.location?.origin) {
+    const origin = window.location.origin.replace(/\/$/, '');
+    const normalizedPath = url.startsWith('/') ? url : `/${url}`;
+    return `${origin}${normalizedPath}`;
+  }
+
+  return url;
+};
+const normalizeBaseUrl = (url) => (typeof url === 'string' ? url.replace(/\/$/, '') : url);
+const getApiUrl = () => normalizeBaseUrl(process.env.REACT_APP_API_URL || resolveDefaultApiUrl());
+const getApiBaseUrl = () => normalizeBaseUrl(process.env.REACT_APP_API_BASE_URL || getApiUrl());
+const getBaseUrl = () => getApiBaseUrl();
 const API_KEY = process.env.REACT_APP_API_KEY;
 
 const buildHeaders = (headers = {}) => {
@@ -22,7 +42,8 @@ const buildHeaders = (headers = {}) => {
 };
 
 export const apiRequest = async (path, { method = 'GET', body, headers, signal } = {}) => {
-  const response = await fetch(`${API_URL}${path}`, {
+  const baseUrl = getApiUrl();
+  const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: buildHeaders(headers),
     body: body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
@@ -121,14 +142,15 @@ export const assessmentService = {
   },
 };
 
-export { API_URL, API_BASE_URL };
+export { getApiUrl, getApiBaseUrl };
 export const getDefaultHeaders = () => buildHeaders();
 export const buildSatelliteImageUrl = (coordinates, { width = 800, height = 800, format, cacheBust } = {}) => {
   if (!coordinates || typeof coordinates.lat !== 'number' || typeof coordinates.lon !== 'number') {
     throw new Error('Coordinates with numeric lat/lon are required to build satellite image URL');
   }
 
-  const url = new URL('satellite-image', ensureTrailingSlash(getBaseUrl()));
+  const baseUrl = ensureTrailingSlash(toAbsoluteUrl(getBaseUrl()));
+  const url = new URL('satellite-image', baseUrl);
   url.searchParams.set('lat', coordinates.lat);
   url.searchParams.set('lon', coordinates.lon);
   url.searchParams.set('width', width);
