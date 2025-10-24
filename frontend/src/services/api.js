@@ -1,5 +1,13 @@
 // frontend/src/services/api.js
-const DEFAULT_API_URL = 'http://localhost:3001/api';
+const resolveDefaultApiUrl = () => {
+  if (typeof window !== 'undefined' && window?.location?.origin) {
+    return `${window.location.origin}/api`;
+  }
+
+  return 'http://localhost:3001/api';
+};
+
+const DEFAULT_API_URL = resolveDefaultApiUrl();
 const API_URL = process.env.REACT_APP_API_URL || DEFAULT_API_URL;
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || API_URL;
 const ensureTrailingSlash = (url) => (url.endsWith('/') ? url : `${url}/`);
