@@ -10,16 +10,30 @@ jobs:
     name: Call satellite debug endpoint
     runs-on: ubuntu-latest
     steps:
-      - name: Ensure URL is configured
+      - name: Detect configuration
+        id: detect_config
         env:
           SATELLITE_DEBUG_URL: ${{ secrets.SATELLITE_DEBUG_URL }}
         run: |
           if [ -z "${SATELLITE_DEBUG_URL}" ]; then
-            echo "SATELLITE_DEBUG_URL secret is not configured"
-            exit 1
+            echo "url_configured=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Satellite diagnostics monitor"
+              echo "SATELLITE_DEBUG_URL secret is not configured."
+              echo "Job marked as skipped."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "url_configured=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Skip when URL is missing
+        if: steps.detect_config.outputs.url_configured != 'true'
+        run: |
+          echo "SATELLITE_DEBUG_URL secret is not configured; skipping monitor run."
+          exit 0
+
       - name: Invoke debug endpoint
+        if: steps.detect_config.outputs.url_configured == 'true'
         env:
           SATELLITE_DEBUG_URL: ${{ secrets.SATELLITE_DEBUG_URL }}
           SATELLITE_DEBUG_API_KEY: ${{ secrets.SATELLITE_DEBUG_API_KEY }}
