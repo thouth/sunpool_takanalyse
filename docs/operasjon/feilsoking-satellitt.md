@@ -94,3 +94,10 @@ Eksempel på feil:
 Et GitHub Actions-workflow (`.github/workflows/satellite-diagnostics-monitor.yml`) kaller debug-endepunktet én gang per døgn. Jobben
 failer dersom responsen ikke er HTTP 200 eller `success: true`, og GitHub sender da varsel til repo-eiere. Sett hemmeligheten
 `SATELLITE_DEBUG_URL` i repoet til miljøet du ønsker å overvåke (for eksempel produksjon).
+
+### Vanlige feil
+
+- **`SATELLITE_DEBUG_URL secret is not configured` i jobbloggen** – workflowet markerer nå jobben som "skipped" når hemmeligheten
+  mangler. Legg inn en hemmelighet med navn `SATELLITE_DEBUG_URL` og verdi lik full URL til debug-endepunktet du ønsker å
+  overvåke (for eksempel `https://app.example.com/api/satellite-image/debug`). Når hemmeligheten er lagt til, kjøres jobben videre
+  til `Invoke debug endpoint`-steget.
